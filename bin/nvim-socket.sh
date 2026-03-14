@@ -74,12 +74,31 @@ find_nvim_socket() {
     done <<< "$_tmp_glob_out"
   fi
 
+  # 4. Scan XDG_RUNTIME_DIR paths (NixOS, systemd-based distros)
+  # Complements step 3; on these systems sockets live in $XDG_RUNTIME_DIR, not /tmp
+  local _xdg_dir="${XDG_RUNTIME_DIR:-}"
+  if [[ -z "$_xdg_dir" ]]; then
+    _xdg_dir="/run/user/$(id -u)"
+  fi
+  local _xdg_glob_out
+  _xdg_glob_out="$(compgen -G "$_xdg_dir/nvim.*.0" 2>/dev/null)" || true
+  if [[ -n "$_xdg_glob_out" ]]; then
+    while IFS= read -r socket; do
+      if [[ -S "$socket" ]]; then
+        pid=$(echo "$socket" | grep -oE 'nvim\.[0-9]+' | grep -oE '[0-9]+')
+        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+          live_sockets+=("$pid:$socket")
+        fi
+      fi
+    done <<< "$_xdg_glob_out"
+  fi
+
   if [[ ${#live_sockets[@]} -eq 0 ]]; then
     eval "$_oldopts"
     return 1
   fi
 
-  # 4. If project_cwd given, prefer the socket whose nvim has a matching cwd
+  # 5. If project_cwd given, prefer the socket whose nvim has a matching cwd
   if [[ -n "$project_cwd" ]]; then
     local entry nvim_cwd
     for entry in "${live_sockets[@]}"; do
@@ -94,7 +113,7 @@ find_nvim_socket() {
     done
   fi
 
-  # 5. Fallback to the first live socket
+  # 6. Fallback to the first live socket
   if [[ -z "$result" ]]; then
     result="${live_sockets[0]#*:}"
   fi
