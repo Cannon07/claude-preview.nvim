@@ -206,16 +206,13 @@ For buffers to auto-reload after Claude writes a file, add this to your Neovim c
 
 ```lua
 vim.o.autoread = true
-  vim.api.nvim_create_autocmd(
-    { "FocusGained", "BufEnter", "CursorHold" },
-    {
-      callback = function()
-        if vim.fn.getcmdwintype() == "" then
-          vim.cmd("checktime")
-        end
-      end,
-    }
-  )
+vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter", "CursorHold" }, {
+ callback = function()
+  if vim.fn.getcmdwintype() == "" then
+   vim.cmd("checktime")
+  end
+ end,
+})
 ```
 
 ---
