@@ -38,6 +38,41 @@ function M.is_open()
   return diff_tab ~= nil and vim.api.nvim_tabpage_is_valid(diff_tab)
 end
 
+-- Module-level storage for inline diff line numbers
+local inline_line_numbers = {}
+
+-- Module-level storage for inline diff line types
+local inline_line_types = {}
+
+-- Track which window is the inline diff window
+local inline_diff_win = nil
+
+-- Statuscolumn function for inline diff: shows old|new line numbers + sign
+function M.inline_statuscolumn(col_width)
+  -- Only apply to the inline diff window
+  if vim.g.statusline_winid ~= inline_diff_win then
+    return ""
+  end
+  local lnum = vim.v.lnum
+  if not inline_line_numbers[lnum] then
+    return string.rep(" ", col_width * 2 + 3)
+  end
+  local old_num = inline_line_numbers[lnum][1]
+  local new_num = inline_line_numbers[lnum][2]
+  local old_str = old_num and string.format("%" .. col_width .. "d", old_num) or string.rep(" ", col_width)
+  local new_str = new_num and string.format("%" .. col_width .. "d", new_num) or string.rep(" ", col_width)
+
+  local line_type = inline_line_types[lnum]
+  local sign = " "
+  if line_type == "added" then
+    sign = "%#ClaudeDiffInlineAddedSign#+%*"
+  elseif line_type == "removed" then
+    sign = "%#ClaudeDiffInlineRemovedSign#-%*"
+  end
+
+  return old_str .. "│" .. new_str .. " " .. sign
+end
+
 local function apply_inline_highlights(config)
   local hl = config.highlights.inline or {}
   vim.api.nvim_set_hl(0, "ClaudeDiffInlineAdded", hl.added or { bg = "#2e4c2e" })
@@ -46,8 +81,6 @@ local function apply_inline_highlights(config)
   vim.api.nvim_set_hl(0, "ClaudeDiffInlineRemovedText", hl.removed_text or { bg = "#6e3a3a" })
   vim.api.nvim_set_hl(0, "ClaudeDiffInlineAddedSign", { fg = "#73e896", bold = true })
   vim.api.nvim_set_hl(0, "ClaudeDiffInlineRemovedSign", { fg = "#f47070", bold = true })
-  vim.fn.sign_define("ClaudeDiffInlineAddedSign", { text = "+", texthl = "ClaudeDiffInlineAddedSign" })
-  vim.fn.sign_define("ClaudeDiffInlineRemovedSign", { text = "-", texthl = "ClaudeDiffInlineRemovedSign" })
 end
 
 -- Compute character-level diff between two lines, returns list of {start, end} changed ranges
@@ -81,13 +114,14 @@ local function build_inline_diff(original_path, proposed_path)
   })
 
   if not diff_str or diff_str == "" then
-    return prop_lines, {}, {}
+    return prop_lines, {}, {}, {}, {}
   end
 
   local display_lines = {}
   local line_highlights = {}    -- { {line_idx, hl_group} }
   local char_highlights = {}    -- { {line_idx, hl_group, col_start, col_end} }
-  local signs = {}              -- { {line_idx, sign_name} }
+  local line_numbers = {}       -- { {old_num|nil, new_num|nil} } per display line
+  local line_types = {}         -- { [lnum] = "added"|"removed"|nil } per display line
 
   -- First pass: collect all lines with their types
   local entries = {}
@@ -108,6 +142,8 @@ local function build_inline_diff(original_path, proposed_path)
   end
 
   -- Second pass: detect removed/added pairs for char-level highlighting
+  local old_num = 0
+  local new_num = 0
   local i = 1
   while i <= #entries do
     local e = entries[i]
@@ -129,8 +165,10 @@ local function build_inline_diff(original_path, proposed_path)
       for j = removed_start, removed_end do
         table.insert(display_lines, entries[j].text)
         local line_idx = #display_lines - 1
+        old_num = old_num + 1
+        table.insert(line_numbers, { old_num, nil })
         table.insert(line_highlights, { line_idx, "ClaudeDiffInlineRemoved" })
-        table.insert(signs, { line_idx, "ClaudeDiffInlineRemovedSign" })
+        line_types[line_idx + 1] = "removed"
         -- If there's a matching added line, compute char diff
         local pair_idx = added_start + (j - removed_start)
         if pair_idx <= added_end then
@@ -146,8 +184,10 @@ local function build_inline_diff(original_path, proposed_path)
       for j = added_start, added_end do
         table.insert(display_lines, entries[j].text)
         local line_idx = #display_lines - 1
+        new_num = new_num + 1
+        table.insert(line_numbers, { nil, new_num })
         table.insert(line_highlights, { line_idx, "ClaudeDiffInlineAdded" })
-        table.insert(signs, { line_idx, "ClaudeDiffInlineAddedSign" })
+        line_types[line_idx + 1] = "added"
         -- If there's a matching removed line, compute char diff
         local pair_idx = removed_start + (j - added_start)
         if pair_idx <= removed_end then
@@ -162,18 +202,26 @@ local function build_inline_diff(original_path, proposed_path)
     else
       table.insert(display_lines, e.text)
       local line_idx = #display_lines - 1
-      if e.type == "added" then
+      if e.type == "context" then
+        old_num = old_num + 1
+        new_num = new_num + 1
+        table.insert(line_numbers, { old_num, new_num })
+      elseif e.type == "added" then
+        new_num = new_num + 1
+        table.insert(line_numbers, { nil, new_num })
         table.insert(line_highlights, { line_idx, "ClaudeDiffInlineAdded" })
-        table.insert(signs, { line_idx, "ClaudeDiffInlineAddedSign" })
+        line_types[line_idx + 1] = "added"
       elseif e.type == "removed" then
+        old_num = old_num + 1
+        table.insert(line_numbers, { old_num, nil })
         table.insert(line_highlights, { line_idx, "ClaudeDiffInlineRemoved" })
-        table.insert(signs, { line_idx, "ClaudeDiffInlineRemovedSign" })
+        line_types[line_idx + 1] = "removed"
       end
       i = i + 1
     end
   end
 
-  return display_lines, line_highlights, char_highlights, signs
+  return display_lines, line_highlights, char_highlights, line_numbers, line_types
 end
 
 local function show_inline_diff(original_path, proposed_path, real_file_path, cfg)
@@ -181,7 +229,7 @@ local function show_inline_diff(original_path, proposed_path, real_file_path, cf
 
   local display_name = real_file_path or "unknown"
   local ft = vim.filetype.match({ filename = real_file_path }) or ""
-  local display_lines, line_highlights, char_highlights, signs =
+  local display_lines, line_highlights, char_highlights, line_numbers, line_types =
     build_inline_diff(original_path, proposed_path)
 
   vim.cmd("tabnew")
@@ -214,39 +262,42 @@ local function show_inline_diff(original_path, proposed_path, real_file_path, cf
       priority = 200,
     })
   end
-  -- Place signs for +/- indicators
-  for _, s in ipairs(signs) do
-    vim.fn.sign_place(0, "ClaudeDiffInlineSigns", s[2], buf, { lnum = s[1] + 1 })
-  end
-
   local win = vim.api.nvim_get_current_win()
+  -- Store line numbers, types, and buffer for statuscolumn to access
+  inline_line_numbers = line_numbers
+  inline_line_types = line_types
+  inline_diff_win = win
+
+  -- Determine column width based on max line number
+  local max_num = 0
+  for _, nums in ipairs(line_numbers) do
+    if nums[1] and nums[1] > max_num then max_num = nums[1] end
+    if nums[2] and nums[2] > max_num then max_num = nums[2] end
+  end
+  local col_width = #tostring(max_num)
+
   vim.wo[win].winbar = "%#DiagnosticInfo# INLINE DIFF %* " .. display_name
-  vim.wo[win].number = true
+  vim.wo[win].number = false
+  vim.wo[win].relativenumber = false
   vim.wo[win].wrap = false
   vim.wo[win].cursorline = true
-  vim.wo[win].signcolumn = "yes"
+  vim.wo[win].signcolumn = "no"
+  vim.wo[win].statuscolumn = "%!v:lua.require('claude-preview.diff').inline_statuscolumn(" .. col_width .. ")"
 
   diff_bufs = { buf }
 
-  -- Track sign group for cleanup
-  local sign_group = "ClaudeDiffInlineSigns"
-
   -- Find first changed line for navigation
   local first_change_line = nil
-  if #signs > 0 then
-    first_change_line = signs[1][1]
-  end
-
-  -- Change navigation keymaps (using sign positions)
-  local change_lines = {}
-  for _, s in ipairs(signs) do
-    change_lines[s[1] + 1] = true
+  for lnum, _ in pairs(line_types) do
+    if not first_change_line or lnum < first_change_line then
+      first_change_line = lnum
+    end
   end
 
   vim.keymap.set("n", "]c", function()
     local cur = vim.api.nvim_win_get_cursor(0)[1]
     for lnum = cur + 1, vim.api.nvim_buf_line_count(buf) do
-      if change_lines[lnum] then
+      if line_types[lnum] then
         vim.api.nvim_win_set_cursor(0, { lnum, 0 })
         return
       end
@@ -256,7 +307,7 @@ local function show_inline_diff(original_path, proposed_path, real_file_path, cf
   vim.keymap.set("n", "[c", function()
     local cur = vim.api.nvim_win_get_cursor(0)[1]
     for lnum = cur - 1, 1, -1 do
-      if change_lines[lnum] then
+      if line_types[lnum] then
         vim.api.nvim_win_set_cursor(0, { lnum, 0 })
         return
       end
@@ -265,7 +316,7 @@ local function show_inline_diff(original_path, proposed_path, real_file_path, cf
 
   -- Jump to first change
   if first_change_line then
-    vim.api.nvim_win_set_cursor(win, { first_change_line + 1, 0 })
+    vim.api.nvim_win_set_cursor(win, { first_change_line, 0 })
   end
 end
 
@@ -394,6 +445,9 @@ function M.close_diff()
 
   diff_tab  = nil
   diff_bufs = {}
+  inline_line_numbers = {}
+  inline_line_types = {}
+  inline_diff_win = nil
 end
 
 -- Close diff AND clear neo-tree indicators (for manual close via <leader>dq)
