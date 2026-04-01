@@ -41,7 +41,7 @@ case "$TOOL_NAME" in
       > "$ORIG_FILE"
     fi
 
-    nvim --headless -l "$SCRIPT_DIR/apply-edit.lua" "$FILE_PATH" "$OLD_STRING" "$NEW_STRING" "$REPLACE_ALL" "$PROP_FILE"
+    NVIM_LISTEN_ADDRESS= nvim --headless -l "$SCRIPT_DIR/apply-edit.lua" "$FILE_PATH" "$OLD_STRING" "$NEW_STRING" "$REPLACE_ALL" "$PROP_FILE"
     ;;
 
   Write)
@@ -66,7 +66,7 @@ case "$TOOL_NAME" in
       > "$ORIG_FILE"
     fi
 
-    nvim --headless -l "$SCRIPT_DIR/apply-multi-edit.lua" "$INPUT" "$PROP_FILE"
+    NVIM_LISTEN_ADDRESS= nvim --headless -l "$SCRIPT_DIR/apply-multi-edit.lua" "$INPUT" "$PROP_FILE"
     ;;
 
   Bash)
@@ -112,13 +112,13 @@ case "$TOOL_NAME" in
     if [[ "$HAS_NVIM" == "true" ]]; then
       for path in $RM_PATHS; do
         PATH_ESC="$(escape_lua "$path")"
-        nvim_send "require('claude-preview.changes').set('$PATH_ESC', 'deleted')"
+        nvim_send "require('claude-preview.changes').set('$PATH_ESC', 'deleted')" || true
       done
-      nvim_send "pcall(function() require('claude-preview.neo_tree').refresh() end)"
+      nvim_send "pcall(function() require('claude-preview.neo_tree').refresh() end)" || true
       # Reveal the first deleted file in the tree
       FIRST_PATH="$(echo "$RM_PATHS" | awk '{print $1}')"
       FIRST_ESC="$(escape_lua "$FIRST_PATH")"
-      nvim_send "vim.defer_fn(function() pcall(function() require('claude-preview.neo_tree').reveal('$FIRST_ESC') end) end, 300)"
+      nvim_send "vim.defer_fn(function() pcall(function() require('claude-preview.neo_tree').reveal('$FIRST_ESC') end) end, 300)" || true
     fi
     exit 0
     ;;
@@ -146,12 +146,12 @@ if [[ "$HAS_NVIM" == "true" ]]; then
     CHANGE_STATUS="created"
   fi
 
-  nvim_send "require('claude-preview.changes').set('$FILE_PATH_ESC', '$CHANGE_STATUS')"
-  nvim_send "pcall(function() require('claude-preview.neo_tree').refresh() end)"
+  nvim_send "require('claude-preview.changes').set('$FILE_PATH_ESC', '$CHANGE_STATUS')" || true
+  nvim_send "pcall(function() require('claude-preview.neo_tree').refresh() end)" || true
   # Reveal the file in neo-tree: for modified files reveal the file itself,
   # for created files reveal the nearest existing parent directory
   if [[ "$CHANGE_STATUS" == "modified" ]]; then
-    nvim_send "vim.defer_fn(function() pcall(function() require('claude-preview.neo_tree').reveal('$FILE_PATH_ESC') end) end, 300)"
+    nvim_send "vim.defer_fn(function() pcall(function() require('claude-preview.neo_tree').reveal('$FILE_PATH_ESC') end) end, 300)" || true
   else
     # Walk up to find the nearest existing parent directory
     REVEAL_DIR="$(dirname "$FILE_PATH")"
@@ -164,9 +164,9 @@ if [[ "$HAS_NVIM" == "true" ]]; then
       REVEAL_TARGET="$REVEAL_DIR"
     fi
     REVEAL_TARGET_ESC="$(escape_lua "$REVEAL_TARGET")"
-    nvim_send "vim.defer_fn(function() pcall(function() require('claude-preview.neo_tree').reveal('$REVEAL_TARGET_ESC') end) end, 300)"
+    nvim_send "vim.defer_fn(function() pcall(function() require('claude-preview.neo_tree').reveal('$REVEAL_TARGET_ESC') end) end, 300)" || true
   fi
-  nvim_send "require('claude-preview.diff').show_diff('$ORIG_ESC', '$PROP_ESC', '$DISPLAY_ESC')"
+  nvim_send "require('claude-preview.diff').show_diff('$ORIG_ESC', '$PROP_ESC', '$DISPLAY_ESC')" || true
 fi
 
 # --- Always ask for user confirmation ---

@@ -33,6 +33,18 @@ function isSocketAlive(socketPath: string): boolean {
   }
 }
 
+function isSocketResponsive(socketPath: string): boolean {
+  try {
+    execSync(`nvim --server "${socketPath}" --remote-expr "1"`, {
+      timeout: 2000,
+      stdio: "ignore",
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
 function isPidAlive(pid: string): boolean {
   try {
     process.kill(parseInt(pid), 0)
@@ -47,9 +59,9 @@ function isPidAlive(pid: string): boolean {
  * Prefers the instance whose cwd matches the given project directory.
  */
 export function findNvimSocket(projectCwd: string): string | null {
-  // 1. Check explicit env var
+  // 1. Check explicit env var — verify the socket is actually responsive
   const envSocket = process.env.NVIM_LISTEN_ADDRESS
-  if (envSocket && isSocketAlive(envSocket)) return envSocket
+  if (envSocket && isSocketAlive(envSocket) && isSocketResponsive(envSocket)) return envSocket
 
   // 2. Scan known socket locations
   const liveSockets: Array<{ pid: string; socket: string }> = []

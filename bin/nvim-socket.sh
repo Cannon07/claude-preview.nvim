@@ -34,12 +34,14 @@ find_nvim_socket() {
   local project_cwd="${1:-}"
   local result=""
 
-  # 1. Check explicit env var first
+  # 1. Check explicit env var first — verify the socket is actually responsive
   if [[ -n "${NVIM_LISTEN_ADDRESS:-}" ]] && [[ -S "$NVIM_LISTEN_ADDRESS" ]]; then
-    result="$NVIM_LISTEN_ADDRESS"
-    eval "$_oldopts"
-    echo "$result"
-    return 0
+    if nvim --server "$NVIM_LISTEN_ADDRESS" --remote-expr "1" >/dev/null 2>&1; then
+      result="$NVIM_LISTEN_ADDRESS"
+      eval "$_oldopts"
+      echo "$result"
+      return 0
+    fi
   fi
 
   # Collect all live sockets as "pid:socket_path" entries
