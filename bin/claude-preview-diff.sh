@@ -138,6 +138,19 @@ if [[ "$HAS_NVIM" == "true" ]]; then
   DISPLAY_ESC="$(escape_lua "$DISPLAY_NAME")"
   FILE_PATH_ESC="$(escape_lua "$FILE_PATH")"
 
+  # Query config + file visibility from nvim in a single RPC call
+  HOOK_CTX=$(nvim --server "$NVIM_SOCKET" --remote-expr "luaeval(\"require('claude-preview').hook_context('${FILE_PATH_ESC}')\")" 2>/dev/null || echo '{}')
+  VISIBLE_ONLY=$(echo "$HOOK_CTX" | jq -r '.visible_only // false')
+  NEO_TREE_REVEAL=$(echo "$HOOK_CTX" | jq -r '.neo_tree_reveal // true')
+  NEO_TREE_REVEAL_ROOT=$(echo "$HOOK_CTX" | jq -r '.reveal_root // "cwd"')
+  FILE_VISIBLE=$(echo "$HOOK_CTX" | jq -r '.file_visible // false')
+
+  # Decide whether to show the diff
+  SHOULD_SHOW="1"
+  if [[ "$VISIBLE_ONLY" == "true" && "$FILE_VISIBLE" != "true" ]]; then
+    SHOULD_SHOW="0"
+  fi
+
   # Determine change status for neo-tree indicator
   # Check if the actual file exists on disk (not the temp copy, which is always created)
   if [[ -f "$FILE_PATH" ]]; then
@@ -146,35 +159,38 @@ if [[ "$HAS_NVIM" == "true" ]]; then
     CHANGE_STATUS="created"
   fi
 
-  nvim_send "require('claude-preview.changes').set('$FILE_PATH_ESC', '$CHANGE_STATUS')" || true
-  nvim_send "pcall(function() require('claude-preview.neo_tree').refresh() end)" || true
-  # Reveal the file in neo-tree: for modified files reveal the file itself,
-  # for created files reveal the nearest existing parent directory
-  if [[ "$CHANGE_STATUS" == "modified" ]]; then
-    nvim_send "vim.defer_fn(function() pcall(function() require('claude-preview.neo_tree').reveal('$FILE_PATH_ESC') end) end, 300)" || true
-  else
-    # Walk up to find the nearest existing parent directory
-    REVEAL_DIR="$(dirname "$FILE_PATH")"
-    while [[ ! -d "$REVEAL_DIR" && "$REVEAL_DIR" != "/" ]]; do
-      REVEAL_DIR="$(dirname "$REVEAL_DIR")"
-    done
-    # Reveal a file inside the parent dir to force neo-tree to expand it
-    REVEAL_TARGET="$(find "$REVEAL_DIR" -maxdepth 1 -type f | head -1)"
-    if [[ -z "$REVEAL_TARGET" ]]; then
-      REVEAL_TARGET="$REVEAL_DIR"
+  if [[ "$SHOULD_SHOW" == "1" ]]; then
+    nvim_send "require('claude-preview.changes').set('$FILE_PATH_ESC', '$CHANGE_STATUS')" || true
+
+    # Neo-tree integration (gated by config)
+    if [[ "$NEO_TREE_REVEAL" == "true" ]]; then
+      # Resolve the directory neo-tree should root from
+      REVEAL_DIR=""
+      if [[ "$NEO_TREE_REVEAL_ROOT" == "git" ]]; then
+        REVEAL_DIR=$(git -C "$(dirname "$FILE_PATH")" rev-parse --show-toplevel 2>/dev/null || echo "")
+        REVEAL_DIR="${REVEAL_DIR:-$(dirname "$FILE_PATH")}"
+      fi
+
+      nvim_send "pcall(function() require('claude-preview.neo_tree').refresh() end)" || true
+
+      if [[ -n "$REVEAL_DIR" ]]; then
+        REVEAL_DIR_ESC="$(escape_lua "$REVEAL_DIR")"
+        nvim_send "vim.defer_fn(function() pcall(function() require('claude-preview.neo_tree').reveal('$FILE_PATH_ESC', '$REVEAL_DIR_ESC') end) end, 300)" || true
+      else
+        nvim_send "vim.defer_fn(function() pcall(function() require('claude-preview.neo_tree').reveal('$FILE_PATH_ESC') end) end, 300)" || true
+      fi
     fi
-    REVEAL_TARGET_ESC="$(escape_lua "$REVEAL_TARGET")"
-    nvim_send "vim.defer_fn(function() pcall(function() require('claude-preview.neo_tree').reveal('$REVEAL_TARGET_ESC') end) end, 300)" || true
+
+    nvim_send "require('claude-preview.diff').show_diff('$ORIG_ESC', '$PROP_ESC', '$DISPLAY_ESC')" || true
   fi
-  nvim_send "require('claude-preview.diff').show_diff('$ORIG_ESC', '$PROP_ESC', '$DISPLAY_ESC')" || true
 fi
 
-# --- Always ask for user confirmation ---
+# --- Permission decision ---
 
-if [[ "$HAS_NVIM" == "true" ]]; then
+if [[ "$HAS_NVIM" == "true" && "$SHOULD_SHOW" == "1" ]]; then
   REASON="Diff preview sent to Neovim. Review before accepting."
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"%s"}}\n' "$REASON"
 else
-  REASON="Neovim not running. Review the diff in CLI before accepting."
+  # File not visible or no nvim — auto-approve
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Auto-approved"}}\n'
 fi
-
-printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"%s"}}\n' "$REASON"
