@@ -29,6 +29,7 @@ Supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Open
 - [Commands](#commands)
 - [Diff Layouts](#diff-layouts)
 - [Neo-tree Integration](#neo-tree-integration-optional)
+- [Testing](#testing)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -290,6 +291,22 @@ claude-preview.nvim/
     ├── nvim.ts                   Neovim socket discovery + RPC
     └── edits.ts                  Edit computation helpers
 ```
+
+---
+
+## Testing
+
+The test suite uses [plenary.nvim](https://github.com/nvim-lua/plenary.nvim) for core plugin tests and shell scripts for backend integration tests. CI runs on both Ubuntu and macOS.
+
+```bash
+./tests/run.sh                      # all tests (plugin + backends)
+./tests/run.sh plugin               # core plugin tests only (plenary busted)
+./tests/run.sh backends             # all backend integration tests
+./tests/run.sh backends/claude      # Claude Code backend only
+./tests/run.sh backends/opencode    # OpenCode backend only
+```
+
+**Dependencies:** Neovim >= 0.10, jq, bun (for OpenCode tests). Plenary is auto-installed to `deps/` on first run.
 
 ---
 
