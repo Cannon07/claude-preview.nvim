@@ -79,7 +79,7 @@ start_nvim() {
   local tries=0
   while [[ ! -S "$TEST_SOCKET" ]] && (( tries < 50 )); do
     sleep 0.1
-    (( tries++ ))
+    tries=$((tries + 1))
   done
 
   if [[ ! -S "$TEST_SOCKET" ]]; then
@@ -205,13 +205,13 @@ assert_file_not_exists() {
 run_test() {
   local test_name="$1"
   local test_func="$2"
-  (( TESTS_TOTAL++ ))
+  TESTS_TOTAL=$((TESTS_TOTAL + 1))
   echo -e "${CYAN}  ▶ $test_name${NC}"
   if $test_func; then
-    (( TESTS_PASSED++ ))
+    TESTS_PASSED=$((TESTS_PASSED + 1))
     echo -e "  ${GREEN}✓ $test_name${NC}"
   else
-    (( TESTS_FAILED++ ))
+    TESTS_FAILED=$((TESTS_FAILED + 1))
     echo -e "  ${RED}✗ $test_name${NC}"
   fi
 }
