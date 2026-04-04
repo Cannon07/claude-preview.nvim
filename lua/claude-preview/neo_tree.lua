@@ -345,20 +345,24 @@ function M.refresh()
   end)
 end
 
-function M.reveal(filepath)
+function M.reveal(filepath, dir)
   if not has_neo_tree then
     return
   end
   pcall(function()
     local cfg = require("claude-preview").config
     local position = cfg.neo_tree.position or "right"
-    require("neo-tree.command").execute({
+    local opts = {
       action = "show",
       source = "filesystem",
       reveal_file = filepath,
       position = position,
       toggle = false,
-    })
+    }
+    if dir then
+      opts.dir = dir
+    end
+    require("neo-tree.command").execute(opts)
   end)
 end
 

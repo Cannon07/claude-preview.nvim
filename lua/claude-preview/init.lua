@@ -13,6 +13,8 @@ local default_config = {
   },
   neo_tree = {
     enabled = true,
+    reveal = true,         -- reveal edited files in neo-tree
+    reveal_root = "cwd",   -- "cwd" (default) or "git" (nearest git root)
     refresh_on_change = true,
     position = "right",
     symbols = {
@@ -95,6 +97,21 @@ function M.setup(user_config)
   vim.keymap.set("n", "<leader>dq", function()
     require("claude-preview.diff").close_diff_and_clear()
   end, { desc = "Close claude-preview diff" })
+end
+
+--- Query hook context for the PreToolUse shell script.
+--- Returns a JSON string with config values in a single RPC call.
+--- @param file_path string absolute path of the file being edited
+--- @return string JSON: { neo_tree_reveal, reveal_root }
+function M.hook_context(file_path)
+  local cfg = M.config
+  local neo_tree_reveal = (cfg.neo_tree.enabled and cfg.neo_tree.reveal) and true or false
+  local reveal_root = cfg.neo_tree.reveal_root or "cwd"
+
+  return vim.json.encode({
+    neo_tree_reveal = neo_tree_reveal,
+    reveal_root = reveal_root,
+  })
 end
 
 function M.status()
