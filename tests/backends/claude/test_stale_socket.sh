@@ -128,8 +128,8 @@ WRAPPER
     bash "$REPO_ROOT/bin/claude-preview-diff.sh" 2>/dev/null || true)"
   rm -f "$wrapper"
 
-  # Should produce a valid JSON response with "ask" decision
-  assert_contains "$output" '"permissionDecision":"ask"' "should still return ask decision without Neovim" || return 1
+  # Should produce no output (defers to Claude Code's permission settings)
+  assert_eq "" "$output" "should produce no output without Neovim" || return 1
   # The script should still compute the edit and produce output (just can't send to Neovim)
   # The proposed temp file should exist
   local proposed="${TMPDIR:-/tmp}/claude-diff-proposed"
