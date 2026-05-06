@@ -62,13 +62,18 @@ find_nvim_socket() {
     done <<< "$_glob_out"
   fi
 
+  # Neovim's socket filename uses $NVIM_APPNAME (defaulting to "nvim") as the
+  # prefix in both /tmp directory names and XDG_RUNTIME_DIR socket files. Used
+  # by steps 3 and 4 below.
+  local _appname="${NVIM_APPNAME:-nvim}"
+
   # 3. Scan /tmp paths (Linux and some macOS setups)
   local _tmp_glob_out
-  _tmp_glob_out="$(compgen -G '/tmp/nvim.*/0' 2>/dev/null)" || true
+  _tmp_glob_out="$(compgen -G "/tmp/${_appname}.*/0" 2>/dev/null)" || true
   if [[ -n "$_tmp_glob_out" ]]; then
     while IFS= read -r socket; do
       if [[ -S "$socket" ]]; then
-        pid=$(echo "$socket" | grep -oE 'nvim\.[0-9]+' | grep -oE '[0-9]+')
+        pid=$(echo "$socket" | grep -oE "${_appname}\\.[0-9]+" | grep -oE '[0-9]+')
         if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
           live_sockets+=("$pid:$socket")
         fi
@@ -79,7 +84,6 @@ find_nvim_socket() {
   # 4. Scan XDG_RUNTIME_DIR paths (NixOS, systemd-based distros)
   # Complements step 3; on these systems sockets live in $XDG_RUNTIME_DIR, not /tmp
   local _xdg_dir="${XDG_RUNTIME_DIR:-}"
-  local _appname="${NVIM_APPNAME:-nvim}"
   if [[ -z "$_xdg_dir" ]]; then
     _xdg_dir="/run/user/$(id -u)"
   fi
