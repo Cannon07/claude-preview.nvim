@@ -48,6 +48,41 @@ find_nvim_socket() {
   local live_sockets=()
   local socket pid
 
+  # 2a. Pidfile discovery — each running nvim that called code-preview.setup()
+  # registers itself at ${XDG_STATE_HOME:-$HOME/.local/state}/code-preview/sockets/<pid>.
+  # File contents: line 1 = socket path, line 2 = cwd. Cheaper and OS-portable
+  # vs the glob-based discovery below, which we keep as a fallback for nvim
+  # instances that haven't been restarted since the upgrade.
+  local _state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
+  local _pidfile_dir="$_state_home/code-preview/sockets"
+  if [[ -d "$_pidfile_dir" ]]; then
+    local pidfile pf_socket pf_cwd
+    for pidfile in "$_pidfile_dir"/*; do
+      [[ -f "$pidfile" ]] || continue
+      pid="$(basename "$pidfile")"
+      [[ "$pid" =~ ^[0-9]+$ ]] || continue
+      { IFS= read -r pf_socket; IFS= read -r pf_cwd; } < "$pidfile" || continue
+      [[ -n "$pf_socket" && -S "$pf_socket" ]] || continue
+
+      # Validate socket is responsive — self-heals stale pidfiles from crashed
+      # nvim where the PID may even have been recycled.
+      if ! nvim --server "$pf_socket" --remote-expr "1" >/dev/null 2>&1; then
+        continue
+      fi
+
+      # If project_cwd given, check match-or-parent rule using the cwd the
+      # nvim itself reported (more accurate than lsof, which gives startup cwd).
+      if [[ -n "$project_cwd" && -n "$pf_cwd" ]]; then
+        if [[ "$project_cwd" == "$pf_cwd" || "$project_cwd" == "$pf_cwd/"* ]]; then
+          eval "$_oldopts"
+          echo "$pf_socket"
+          return 0
+        fi
+      fi
+      live_sockets+=("$pid:$pf_socket")
+    done
+  fi
+
   # 2. Scan macOS /var/folders paths
   local _glob_out
   _glob_out="$(compgen -G '/var/folders/*/*/T/nvim.*/*/nvim.*.0' 2>/dev/null)" || true

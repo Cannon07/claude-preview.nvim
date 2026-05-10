@@ -91,6 +91,9 @@ function M.setup(user_config)
   -- Initialise logging
   require("code-preview.log").init({ debug = M.config.debug })
 
+  -- Self-register socket + cwd for hook-script discovery
+  require("code-preview.pidfile").setup()
+
   -- ── New commands ──────────────────────────────────────────────
 
   vim.api.nvim_create_user_command("CodePreviewInstallClaudeCodeHooks", function()
@@ -224,6 +227,14 @@ function M.status()
     table.insert(lines, "Neovim socket : " .. socket)
   else
     table.insert(lines, "Neovim socket : not found")
+  end
+
+  -- Pidfile (used by hook scripts for socket discovery)
+  local pidfile = require("code-preview.pidfile").path()
+  if vim.fn.filereadable(pidfile) == 1 then
+    table.insert(lines, "Pidfile       : " .. pidfile)
+  else
+    table.insert(lines, "Pidfile       : not registered")
   end
 
   -- jq dependency

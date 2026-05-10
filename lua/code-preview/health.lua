@@ -25,6 +25,23 @@ function M.check()
   local layout = (cfg.diff and cfg.diff.layout) or "unknown"
   ok("Diff layout: " .. layout)
 
+  -- Pidfile registration — used by hook scripts to find this nvim's socket
+  -- without OS-specific socket-glob discovery.
+  local pidfile = require("code-preview.pidfile").path()
+  local pf = io.open(pidfile, "r")
+  if not pf then
+    warn("Pidfile not found at " .. pidfile .. " (hook scripts will fall back to socket discovery)")
+  else
+    local pf_socket = pf:read("*l") or ""
+    local pf_cwd = pf:read("*l") or ""
+    pf:close()
+    if pf_socket == "" or pf_cwd == "" then
+      warn("Pidfile " .. pidfile .. " is malformed (expected socket+cwd on two lines)")
+    else
+      ok("Pidfile registered: " .. pidfile)
+    end
+  end
+
   -- ── Claude Code backend ───────────────────────────────────────
 
   start("Claude Code backend")
