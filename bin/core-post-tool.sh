@@ -22,12 +22,12 @@ TOOL_NAME="$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || true)"
 
 # Discover Neovim socket (prefer instance whose cwd matches project) and load RPC helpers
 source "$SCRIPT_DIR/nvim-socket.sh" "$CWD" 2>/dev/null
-source "$SCRIPT_DIR/nvim-send.sh"
+source "$SCRIPT_DIR/nvim-call.sh"
 
 # Set up logging — query debug config from nvim
 log_post() { :; }
 if [[ -n "${NVIM_SOCKET:-}" ]]; then
-  _POST_CTX=$(nvim --server "$NVIM_SOCKET" --remote-expr "luaeval(\"vim.json.encode({debug=require('code-preview.log').is_enabled(),log_file=require('code-preview.log').get_log_path() or ''})\")" 2>/dev/null || echo '{}')
+  _POST_CTX="$(nvim_call code-preview.log state '[]' || echo '{}')"
   _POST_DEBUG=$(echo "$_POST_CTX" | jq -r '.debug // false')
   _POST_LOG_FILE=$(echo "$_POST_CTX" | jq -r '.log_file // ""')
   if [[ "$_POST_DEBUG" == "true" && -n "$_POST_LOG_FILE" ]]; then
@@ -42,8 +42,9 @@ log_post "tool=$TOOL_NAME"
 # doesn't clobber `modified` markers from concurrent Edit/Write/ApplyPatch
 # operations whose post-hook hasn't fired yet.
 if [[ "$TOOL_NAME" == "Bash" ]]; then
-  nvim_send "require('code-preview.changes').clear_by_statuses({'deleted','bash_modified','bash_created'})" || true
-  nvim_send "vim.defer_fn(function() pcall(function() require('code-preview.neo_tree').refresh() end) end, 200)" || true
+  nvim_call code-preview.changes clear_by_statuses \
+    '[["deleted","bash_modified","bash_created"]]' >/dev/null || true
+  nvim_call code-preview.neo_tree refresh_deferred '[200]' >/dev/null || true
   exit 0
 fi
 
@@ -71,9 +72,9 @@ if [[ "$TOOL_NAME" == "ApplyPatch" ]]; then
       if [[ "$fpath" != /* && -n "$CWD_POST" ]]; then
         fpath="$CWD_POST/$fpath"
       fi
-      fpath_esc="$(escape_lua "$fpath")"
       log_post "closing diff for patch file=$fpath"
-      nvim_send "require('code-preview.diff').close_for_file('$fpath_esc')" || true
+      nvim_call code-preview.diff close_for_file \
+        "$(jq -nc --arg f "$fpath" '[$f]')" >/dev/null || true
     done < <(extract_patch_paths "$PATCH_TEXT")
   fi
   rm -f "${TMPDIR:-/tmp}"/claude-diff-original* "${TMPDIR:-/tmp}"/claude-diff-proposed* "${TMPDIR:-/tmp}"/claude-patch-*
@@ -82,13 +83,13 @@ fi
 
 # Extract file path early — needed for tagged is_open() check
 FILE_PATH="$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true)"
-FILE_PATH_ESC="$(escape_lua "${FILE_PATH:-}")"
 
 # Tell Lua to handle this file's close — tolerates out-of-order post-hooks
 # (OpenCode may fire them in a different order than pre-hooks).
 if [[ -n "$FILE_PATH" ]]; then
   log_post "closing diff for file=$FILE_PATH"
-  nvim_send "require('code-preview.diff').close_for_file('$FILE_PATH_ESC')" || true
+  nvim_call code-preview.diff close_for_file \
+    "$(jq -nc --arg f "$FILE_PATH" '[$f]')" >/dev/null || true
   # neo_tree.refresh() is handled inside close_for_file() via vim.schedule()
 fi
 

@@ -67,4 +67,23 @@ function M.get_log_path()
   return log_file_path
 end
 
+--- Bundled state for hook-script logging setup. Returns the fields all
+--- bash hooks need in one RPC call: debug flag, log file path, this
+--- nvim's servername, and its cwd. Backends use the latter two when
+--- they want to log which nvim instance the diff is being routed to.
+---
+--- Consumers (all in bin/ and backends/): core-pre-tool.sh, core-post-tool.sh
+--- use debug + log_file. copilot/code-preview-diff.sh additionally reads
+--- servername + cwd. Renaming any field is a breaking change for those
+--- scripts — grep for "log state" before touching this shape.
+--- @return { debug: boolean, log_file: string, servername: string, cwd: string }
+function M.state()
+  return {
+    debug     = enabled,
+    log_file  = log_file_path or "",
+    servername = vim.v.servername or "",
+    cwd       = vim.fn.getcwd(),
+  }
+end
+
 return M

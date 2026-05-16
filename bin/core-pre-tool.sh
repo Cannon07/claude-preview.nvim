@@ -26,7 +26,7 @@ CWD="$(echo "$INPUT" | jq -r '.cwd')"
 
 # Discover Neovim socket (prefer instance whose cwd matches project) and load RPC helpers
 source "$SCRIPT_DIR/nvim-socket.sh" "$CWD" 2>/dev/null || true
-source "$SCRIPT_DIR/nvim-send.sh"
+source "$SCRIPT_DIR/nvim-call.sh"
 
 HAS_NVIM=true
 if [[ -z "${NVIM_SOCKET:-}" ]]; then
@@ -36,7 +36,7 @@ fi
 # Set up logging early so all code paths can use it
 log_pre() { :; }
 if [[ "$HAS_NVIM" == "true" ]]; then
-  _PRE_CTX=$(nvim --server "$NVIM_SOCKET" --remote-expr "luaeval(\"vim.json.encode({debug=require('code-preview.log').is_enabled(),log_file=require('code-preview.log').get_log_path() or ''})\")" 2>/dev/null || echo '{}')
+  _PRE_CTX="$(nvim_call code-preview.log state '[]' || echo '{}')"
   _PRE_DEBUG=$(echo "$_PRE_CTX" | jq -r '.debug // false')
   _PRE_LOG_FILE=$(echo "$_PRE_CTX" | jq -r '.log_file // ""')
   if [[ "$_PRE_DEBUG" == "true" && -n "$_PRE_LOG_FILE" ]]; then
@@ -113,12 +113,24 @@ case "$TOOL_NAME" in
                      | grep -vE '^-' \
                      | while read -r p; do
                          if [[ -z "$p" ]]; then continue; fi
-                         # Resolve relative paths against CWD
-                         if [[ "$p" != /* ]]; then
-                           echo "$CWD/$p"
-                         else
-                           echo "$p"
-                         fi
+                         # Strip outer single/double quotes — agents wrap
+                         # paths with shell-special chars (apostrophes,
+                         # spaces) in quotes, and that quoting survives
+                         # into tool_input.command literally.
+                         p="${p#\"}"; p="${p%\"}"
+                         p="${p#\'}"; p="${p%\'}"
+                         # Strip trailing CR (Windows-style payloads).
+                         p="${p%$'\r'}"
+                         if [[ -z "$p" ]]; then continue; fi
+                         # Resolve relative paths against CWD; absolute
+                         # paths and `~/`-prefixed paths pass through.
+                         # `'~/'*` is quoted so bash doesn't tilde-expand
+                         # the pattern at match time.
+                         case "$p" in
+                           /*)    echo "$p" ;;
+                           '~/'*) echo "${HOME}/${p#'~/'}" ;;
+                           *)     echo "$CWD/$p" ;;
+                         esac
                        done
       fi
     }
@@ -131,19 +143,24 @@ case "$TOOL_NAME" in
       done < <(detect_rm_paths "$subcmd")
     done < <(echo "$COMMAND" | sed 's/[;&|]\{1,2\}/\n/g')
 
-    RM_PATHS="$(echo "$RM_PATHS" | xargs)"
+    # Trim leading/trailing whitespace without invoking xargs — xargs does
+    # shell-like quote processing on its input and would discard everything
+    # if any path contained an unbalanced quote (e.g. an apostrophe in
+    # `it's-mine.txt`).
+    RM_PATHS="${RM_PATHS#"${RM_PATHS%%[![:space:]]*}"}"
+    RM_PATHS="${RM_PATHS%"${RM_PATHS##*[![:space:]]}"}"
 
     # Mark each rm-detected path as deleted in neo-tree
     if [[ -n "$RM_PATHS" && "$HAS_NVIM" == "true" ]]; then
       for path in $RM_PATHS; do
-        PATH_ESC="$(escape_lua "$path")"
-        nvim_send "require('code-preview.changes').set('$PATH_ESC', 'deleted')" || true
+        nvim_call code-preview.changes set \
+          "$(jq -nc --arg p "$path" '[$p, "deleted"]')" >/dev/null || true
       done
-      nvim_send "pcall(function() require('code-preview.neo_tree').refresh() end)" || true
+      nvim_call code-preview.neo_tree refresh '[]' >/dev/null || true
       # Reveal the first deleted file in the tree
       FIRST_PATH="$(echo "$RM_PATHS" | awk '{print $1}')"
-      FIRST_ESC="$(escape_lua "$FIRST_PATH")"
-      nvim_send "vim.defer_fn(function() pcall(function() require('code-preview.neo_tree').reveal('$FIRST_ESC') end) end, 300)" || true
+      nvim_call code-preview.neo_tree reveal_deferred \
+        "$(jq -nc --arg p "$FIRST_PATH" --argjson d 300 '[$p, $d]')" >/dev/null || true
     fi
 
     # ── Tier 1 shell-write detection ────────────────────────────────
@@ -244,7 +261,9 @@ case "$TOOL_NAME" in
         *) WRITE_PATHS="$WRITE_PATHS $raw" ;;
       esac
     done < <(detect_write_paths "$COMMAND")
-    WRITE_PATHS="$(echo "$WRITE_PATHS" | xargs)"
+    # Trim without xargs (see RM_PATHS comment above re: apostrophes).
+    WRITE_PATHS="${WRITE_PATHS#"${WRITE_PATHS%%[![:space:]]*}"}"
+    WRITE_PATHS="${WRITE_PATHS%"${WRITE_PATHS##*[![:space:]]}"}"
 
     # Note: this branch always runs for Bash (no early-exit on read-only
     # commands). The detector forks several subshells per invocation; if
@@ -260,17 +279,17 @@ case "$TOOL_NAME" in
         else
           STATUS="bash_created"
         fi
-        PATH_ESC="$(escape_lua "$path")"
-        nvim_send "require('code-preview.changes').set('$PATH_ESC', '$STATUS')" || true
+        nvim_call code-preview.changes set \
+          "$(jq -nc --arg p "$path" --arg s "$STATUS" '[$p, $s]')" >/dev/null || true
       done
-      nvim_send "pcall(function() require('code-preview.neo_tree').refresh() end)" || true
+      nvim_call code-preview.neo_tree refresh '[]' >/dev/null || true
       # Reveal precedence: rm wins. If the rm branch already queued a
       # reveal, skip ours so we don't double-fire two defer_fn reveals on
       # a command that both rm's and writes (e.g. `rm a && echo x > b`).
       if [[ -z "$RM_PATHS" ]]; then
         FIRST_PATH="$(echo "$WRITE_PATHS" | awk '{print $1}')"
-        FIRST_ESC="$(escape_lua "$FIRST_PATH")"
-        nvim_send "vim.defer_fn(function() pcall(function() require('code-preview.neo_tree').reveal('$FIRST_ESC') end) end, 300)" || true
+        nvim_call code-preview.neo_tree reveal_deferred \
+          "$(jq -nc --arg p "$FIRST_PATH" --argjson d 300 '[$p, $d]')" >/dev/null || true
       fi
     fi
 
@@ -318,12 +337,8 @@ case "$TOOL_NAME" in
       log_pre "ApplyPatch: file=$REL_PATH action=$ACTION"
 
       if [[ "$HAS_NVIM" == "true" ]]; then
-        display_esc="$(escape_lua "$REL_PATH")"
-        orig_esc="$(escape_lua "$PATCH_ORIG")"
-        prop_esc="$(escape_lua "$PATCH_PROP")"
-        fpath_esc="$(escape_lua "$PATCH_FILE_PATH")"
-
-        HOOK_CTX=$(nvim --server "$NVIM_SOCKET" --remote-expr "luaeval(\"require('code-preview').hook_context('${fpath_esc}')\")" 2>/dev/null || echo '{}')
+        HOOK_CTX="$(nvim_call code-preview hook_context \
+          "$(jq -nc --arg fp "$PATCH_FILE_PATH" '[$fp]')" || echo '{}')"
         VISIBLE_ONLY=$(echo "$HOOK_CTX" | jq -r '.visible_only // false')
         FILE_VISIBLE=$(echo "$HOOK_CTX" | jq -r '.file_visible // false')
 
@@ -335,8 +350,9 @@ case "$TOOL_NAME" in
 
         if [[ "$SHOULD_SHOW" == "1" ]]; then
           log_pre "ApplyPatch: sending diff for $REL_PATH to nvim (action=$ACTION)"
-          action_esc="$(escape_lua "$ACTION")"
-          nvim_send "require('code-preview.diff').show_diff('$orig_esc', '$prop_esc', '$display_esc', '$fpath_esc', '$action_esc')" || true
+          nvim_call code-preview.diff show_diff \
+            "$(jq -nc --arg o "$PATCH_ORIG" --arg p "$PATCH_PROP" --arg d "$REL_PATH" --arg f "$PATCH_FILE_PATH" --arg a "$ACTION" \
+              '[$o, $p, $d, $f, $a]')" >/dev/null || true
         fi
       else
         log_pre "ApplyPatch: no nvim connection, skipping diff for $REL_PATH"
@@ -357,15 +373,11 @@ esac
 DISPLAY_NAME="${FILE_PATH#"$CWD/"}"
 
 if [[ "$HAS_NVIM" == "true" ]]; then
-  ORIG_ESC="$(escape_lua "$ORIG_FILE")"
-  PROP_ESC="$(escape_lua "$PROP_FILE")"
-  DISPLAY_ESC="$(escape_lua "$DISPLAY_NAME")"
-  FILE_PATH_ESC="$(escape_lua "$FILE_PATH")"
-
   # Query config + file visibility from nvim in a single RPC call.
   # Neo-tree indicator/reveal is now driven from lua/code-preview/diff.lua
   # (inside show_diff), so we only need visibility + permission fields here.
-  HOOK_CTX=$(nvim --server "$NVIM_SOCKET" --remote-expr "luaeval(\"require('code-preview').hook_context('${FILE_PATH_ESC}')\")" 2>/dev/null || echo '{}')
+  HOOK_CTX="$(nvim_call code-preview hook_context \
+    "$(jq -nc --arg fp "$FILE_PATH" '[$fp]')" || echo '{}')"
   VISIBLE_ONLY=$(echo "$HOOK_CTX" | jq -r '.visible_only // false')
   FILE_VISIBLE=$(echo "$HOOK_CTX" | jq -r '.file_visible // false')
   DEFER_PERMISSIONS=$(echo "$HOOK_CTX" | jq -r 'if .defer_claude_permissions == true then "true" else "false" end')
@@ -382,7 +394,9 @@ if [[ "$HAS_NVIM" == "true" ]]; then
 
   if [[ "$SHOULD_SHOW" == "1" ]]; then
     log_pre "sending diff to nvim (layout via config)"
-    nvim_send "require('code-preview.diff').show_diff('$ORIG_ESC', '$PROP_ESC', '$DISPLAY_ESC', '$FILE_PATH_ESC')" || true
+    nvim_call code-preview.diff show_diff \
+      "$(jq -nc --arg o "$ORIG_FILE" --arg p "$PROP_FILE" --arg d "$DISPLAY_NAME" --arg f "$FILE_PATH" \
+        '[$o, $p, $d, $f]')" >/dev/null || true
   fi
 fi
 

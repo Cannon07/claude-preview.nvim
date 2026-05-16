@@ -37,11 +37,11 @@ log() { :; }
 # shellcheck source=/dev/null
 source "$BIN_DIR/nvim-socket.sh" "$CWD" 2>/dev/null || true
 # shellcheck source=/dev/null
-source "$BIN_DIR/nvim-send.sh" 2>/dev/null || true
+source "$BIN_DIR/nvim-call.sh" 2>/dev/null || true
 _NVIM_SERVERNAME=""
 _NVIM_CWD=""
 if [[ -n "${NVIM_SOCKET:-}" ]]; then
-  _CTX=$(nvim --server "$NVIM_SOCKET" --remote-expr "luaeval(\"vim.json.encode({debug=require('code-preview.log').is_enabled(),log_file=require('code-preview.log').get_log_path() or '',servername=vim.v.servername,cwd=vim.fn.getcwd()})\")" 2>/dev/null || echo '{}')
+  _CTX="$(nvim_call code-preview.log state '[]' || echo '{}')"
   _DBG=$(echo "$_CTX" | jq -r '.debug // false' 2>/dev/null)
   _LOG=$(echo "$_CTX" | jq -r '.log_file // ""' 2>/dev/null)
   _NVIM_SERVERNAME=$(echo "$_CTX" | jq -r '.servername // ""' 2>/dev/null)

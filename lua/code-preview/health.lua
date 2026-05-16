@@ -42,6 +42,14 @@ function M.check()
     end
   end
 
+  -- RPC dispatcher (loaded by every hook RPC; readability check only since
+  -- it's a Lua module on the rtp, not a standalone script).
+  if pcall(require, "code-preview.rpc") then
+    ok("code-preview.rpc dispatcher loadable")
+  else
+    error("code-preview.rpc dispatcher failed to load — hook RPC will not work")
+  end
+
   -- ── Claude Code backend ───────────────────────────────────────
 
   start("Claude Code backend")
@@ -79,7 +87,7 @@ function M.check()
   -- Shared scripts
   for _, script in ipairs({
     "nvim-socket.sh",
-    "nvim-send.sh",
+    "nvim-call.sh",
     "apply-edit.lua",
     "apply-multi-edit.lua",
   }) do

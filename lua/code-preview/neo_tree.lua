@@ -357,6 +357,23 @@ function M.refresh()
   end)
 end
 
+--- Schedule a M.refresh() call after `ms` milliseconds. Used by
+--- core-post-tool.sh to give the file system a moment to settle after
+--- Bash tool changes before redrawing the tree.
+function M.refresh_deferred(ms)
+  vim.defer_fn(function() pcall(M.refresh) end, ms or 200)
+end
+
+--- Schedule a M.reveal() call after `ms` milliseconds. Useful for hook
+--- scripts that want the tree to settle (e.g. after a refresh) before the
+--- viewport jumps. Wrapped in pcall so a torn-down nvim during the delay
+--- can't propagate an error.
+function M.reveal_deferred(filepath, ms, dir)
+  vim.defer_fn(function()
+    pcall(M.reveal, filepath, dir)
+  end, ms or 300)
+end
+
 function M.reveal(filepath, dir)
   if not has_neo_tree then
     return
