@@ -119,8 +119,7 @@ EOF
 )
 
   # Force scan mode by blanking any inherited NVIM_LISTEN_ADDRESS. The hook
-  # must still compute the proposed file and exit cleanly even if there is no
-  # project-specific Neovim to attach to.
+  # must exit cleanly when there is no project-specific Neovim to attach to.
   local exit_code=0
   echo "$payload" | \
     NVIM_LISTEN_ADDRESS= \
@@ -131,10 +130,12 @@ EOF
   # project-specific nvim instance.
   assert_eq "0" "$exit_code" "hook must exit 0 without a guaranteed project nvim match" || return 1
 
-  # The proposed temp file must exist (PID-suffixed): headless nvim computed the edit.
-  local proposed
-  proposed="$(ls -1t "$hook_tmpdir"/claude-diff-proposed-* 2>/dev/null | head -1)"
-  assert_file_exists "$proposed" "proposed file should be computed even without a project-specific nvim match" || return 1
+  # Per ADR-0005 (issue #47 phase 3), the hook abstains entirely when no
+  # Neovim is reachable: no proposed file is computed, no stdout, exit 0.
+  # The pre-phase-3 bash core also wrote a proposed temp file in this case
+  # as a side effect of spawning `nvim --headless -l apply-edit.lua`; we
+  # no longer do that. Claude Code falls back to its native flow as if the
+  # plugin weren't installed.
   rm -rf "$hook_tmpdir"
 }
 

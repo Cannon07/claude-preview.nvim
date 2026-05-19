@@ -244,6 +244,7 @@ function M.handle(raw, backend)
 
   return emitters.emit(backend, {
     has_nvim = true,
+    tool_name = tool_name,
     defer_claude_permissions = cfg.diff and cfg.diff.defer_claude_permissions or false,
   })
 end

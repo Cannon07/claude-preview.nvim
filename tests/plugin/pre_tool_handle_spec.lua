@@ -53,19 +53,31 @@ describe("pre_tool.handle (Bash)", function()
 end)
 
 describe("pre_tool.handle (emitter output)", function()
-  it("claudecode emits permissionDecision JSON", function()
-    local out = pre_tool.handle(payload("Bash", { command = "ls" }), "claudecode")
+  it("claudecode emits permissionDecision JSON for Edit", function()
+    local out = pre_tool.handle(
+      payload("Edit", { file_path = "/tmp/x", old_string = "a", new_string = "b" }),
+      "claudecode")
     assert.is_truthy(out:match("permissionDecision"))
     assert.is_truthy(out:match("PreToolUse"))
   end)
 
+  it("claudecode emits nothing for Bash", function()
+    local out = pre_tool.handle(payload("Bash", { command = "ls" }), "claudecode")
+    assert.equals("", out)
+  end)
+
+  it("claudecode emits nothing for unknown tool", function()
+    local out = pre_tool.handle(payload("Read", { file_path = "/tmp/x" }), "claudecode")
+    assert.equals("", out)
+  end)
+
   it("opencode emits empty stdout", function()
-    local out = pre_tool.handle(payload("Bash", { command = "ls" }), "opencode")
+    local out = pre_tool.handle(payload("Edit", { file_path = "/tmp/x" }), "opencode")
     assert.equals("", out)
   end)
 
   it("unknown backend emits empty stdout", function()
-    local out = pre_tool.handle(payload("Bash", { command = "ls" }), "future-agent")
+    local out = pre_tool.handle(payload("Edit", { file_path = "/tmp/x" }), "future-agent")
     assert.equals("", out)
   end)
 end)

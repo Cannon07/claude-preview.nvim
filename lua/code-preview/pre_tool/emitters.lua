@@ -13,17 +13,21 @@ local function none(_ctx)
   return ""
 end
 
+-- Only Edit / Write / MultiEdit prompt for review under Claude Code. Bash,
+-- ApplyPatch, and unknown tools must produce no stdout (matches the bash
+-- core's `*) exit 0;;` / per-case early exits before the permission block).
+local CLAUDECODE_EMIT_TOOLS = { Edit = true, Write = true, MultiEdit = true }
+
 local function claudecode(ctx)
   if ctx.has_nvim == false then return "" end
   if ctx.defer_claude_permissions then return "" end
-  local reason = "Diff preview sent to Neovim. Review before accepting."
-  return vim.json.encode({
-    hookSpecificOutput = {
-      hookEventName = "PreToolUse",
-      permissionDecision = "ask",
-      permissionDecisionReason = reason,
-    },
-  }) .. "\n"
+  if not CLAUDECODE_EMIT_TOOLS[ctx.tool_name or ""] then return "" end
+  -- Hand-built JSON: vim.json.encode doesn't preserve table key order, so
+  -- the string varies across Lua hash seeds. The downstream consumer
+  -- (Claude Code) doesn't care about order, but the shell-level tests
+  -- assert byte-exact output. Keep the order matching the historical
+  -- bash printf format: hookEventName, permissionDecision, permissionDecisionReason.
+  return '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"Diff preview sent to Neovim. Review before accepting."}}\n'
 end
 
 M.emitters = {
