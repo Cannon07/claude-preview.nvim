@@ -75,7 +75,7 @@ Job: take the agent's native hook payload, normalise it into the shape the [core
 
 ## Core handler
 
-The agent-neutral pipeline that, given a normalised proposal, decides whether to show a preview, computes the original and proposed file content, and makes the [RPC](#rpc) call into the running Neovim. Today: `bin/core-pre-tool.sh` and `bin/core-post-tool.sh`. Issue #47 phases 3 and 4 replace these with Lua equivalents run via `nvim --headless -l`; the role stays the same.
+The agent-neutral pipeline that, given a normalised proposal, decides whether to show a preview, computes the original and proposed file content, and makes the [RPC](#rpc) call into the running Neovim. Today: `bin/core-pre-tool.sh` and `bin/core-post-tool.sh`. Issue #47 phases 3 and 4 fold the core handler into in-process Lua (`lua/code-preview/pre_tool.lua` / `post_tool.lua`), invoked through a single RPC call from the per-agent [hook entry](#hook-entry); the orchestration role stays the same but no longer runs in a separate process. See [ADR-0005](docs/adr/0005-core-handler-runs-in-process.md).
 
 The core handler is where shell-write detection, `visible_only` gating, and `permissionDecision` emission live — everything that doesn't depend on which agent fired the hook.
 
@@ -174,6 +174,8 @@ An [RPC](#rpc) call the [core handler](#core-handler) issues to the running Neov
 
 The pattern exists because the bash layer holds no config of its own — see [ADR-0004](docs/adr/0004-config-lives-only-in-neovim.md). If Neovim is unreachable, the hook degrades safely (no logging, no [review gate](#review-gate), no visibility filter).
 
+After issue #47 phase 3, the hook context query collapses into a local function call inside the in-process [core handler](#core-handler); the RPC form survives only for callers that still live outside the user's Neovim (e.g. a backend that hasn't yet flipped to the Lua entry point).
+
 ## Headless worker
 
 A short-lived Neovim spawned with `nvim --headless -l <script>.lua` to do work *outside* the user's running Neovim. Headless workers have no UI, no access to the user's `M.config` or open buffers, and communicate via stdin / stdout / exit code or via [RPC](#rpc) back to the user's instance.
@@ -184,7 +186,7 @@ Today's headless workers:
 - `bin/apply-multi-edit.lua` — same for `MultiEdit`.
 - `bin/apply-patch.lua` — parses the custom patch format and emits per-file orig/prop tempfiles for `ApplyPatch`.
 
-After issue #47 phases 3 and 4, `bin/core-pre-tool.lua` and `bin/core-post-tool.lua` will join this category — the entire [core handler](#core-handler) becomes a headless worker. At that point, "bash core handler" goes away as a concept and "headless worker" is *the* extra-process model.
+Issue #47 phases 3 and 4 do **not** add the core handler to this list. After an early design pass we chose to fold the handler into in-process Lua instead of a new headless worker, to eliminate the per-proposal cold-start and the chain of small RPC calls back into the user's Neovim. See [ADR-0005](docs/adr/0005-core-handler-runs-in-process.md). After phases 3/4 land, "bash core handler" goes away and the apply-* scripts remain the canonical examples of headless workers.
 
 ## In-process Lua vs headless Lua
 

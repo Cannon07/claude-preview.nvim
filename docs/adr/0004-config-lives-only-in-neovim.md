@@ -14,5 +14,5 @@ The reason: keeping a second copy of config on the bash side creates two ways to
 
 - Per-hook latency includes at least one RPC round-trip (often two: `log.state` early + `hook_context` later). Acceptable today; if the cost ever bites, the two queries can be merged into one.
 - The bash handler's behaviour without Neovim is a real fallback path, not a bug — it must remain safe and silent. Tests should exercise the "no nvim" branch.
-- After issue #47 phases 3 and 4, the [core handler](../../CONTEXT.md#core-handler) runs as Lua via `nvim --headless -l`. The hook-context-query pattern still applies, but the call becomes an in-process function call rather than an RPC. The principle (config in Neovim, fetched on demand) does not change.
+- After issue #47 phases 3 and 4, the [core handler](../../CONTEXT.md#core-handler) runs in-process inside the user's Neovim (see [ADR-0005](0005-core-handler-runs-in-process.md)). The hook-context-query collapses into a local function call; the RPC form survives only for callers that still live outside the user's Neovim. The principle (config in Neovim, fetched on demand) does not change.
 - New config keys that the bash side might need must be added to `hook_context()`'s return shape — not silently exported to the environment or written to a side file.

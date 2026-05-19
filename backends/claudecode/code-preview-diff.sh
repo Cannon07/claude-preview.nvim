@@ -1,8 +1,31 @@
 #!/usr/bin/env bash
-# code-preview-diff.sh — PreToolUse hook adapter for Claude Code
-# Delegates to core-pre-tool.sh with the Claude Code backend flag.
+# code-preview-diff.sh — PreToolUse hook entry for Claude Code.
+#
+# After issue #47 phase 3, this shim does almost nothing: it discovers the
+# running Neovim's socket and makes a single RPC call into the in-process
+# orchestrator (lua/code-preview/pre_tool/init.lua), then prints whatever the
+# orchestrator returns. The 600 lines of bash that used to live in
+# core-pre-tool.sh are gone.
+#
+# When Neovim is unreachable, the shim abstains: exit 0 with no stdout.
+# Claude Code falls back to its native permission flow as if the plugin
+# weren't installed. See docs/adr/0005-core-handler-runs-in-process.md.
+
+set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BIN_DIR="$SCRIPT_DIR/../../bin"
-export CODE_PREVIEW_BACKEND="claudecode"
-exec "$BIN_DIR/core-pre-tool.sh"
+
+INPUT="$(cat)"
+CWD="$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || true)"
+
+# Socket discovery — silent failure is fine, we abstain below.
+source "$BIN_DIR/nvim-socket.sh" "$CWD" 2>/dev/null || true
+source "$BIN_DIR/nvim-call.sh"
+
+if [[ -z "${NVIM_SOCKET:-}" ]]; then
+  exit 0
+fi
+
+ARGS="$(jq -nc --argjson r "$INPUT" --arg b claudecode '[$r, $b]')"
+nvim_call code-preview.pre_tool handle "$ARGS"
