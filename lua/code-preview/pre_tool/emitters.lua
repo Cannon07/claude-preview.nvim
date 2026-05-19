@@ -19,7 +19,6 @@ end
 local CLAUDECODE_EMIT_TOOLS = { Edit = true, Write = true, MultiEdit = true }
 
 local function claudecode(ctx)
-  if ctx.has_nvim == false then return "" end
   if ctx.defer_claude_permissions then return "" end
   if not CLAUDECODE_EMIT_TOOLS[ctx.tool_name or ""] then return "" end
   -- Hand-built JSON: vim.json.encode doesn't preserve table key order, so

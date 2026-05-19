@@ -8,6 +8,8 @@
 #
 # When Neovim is unreachable, the shim abstains silently (exit 0).
 
+# No `set -e`: abstain on jq/nvim_call failure rather than surfacing a
+# hook failure to the agent. See the matching note in code-preview-diff.sh.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -23,5 +25,6 @@ if [[ -z "${NVIM_SOCKET:-}" ]]; then
   exit 0
 fi
 
-ARGS="$(jq -nc --argjson r "$INPUT" --arg b claudecode '[$r, $b]')"
+ARGS="$(jq -nc --argjson r "$INPUT" --arg b claudecode '[$r, $b]' 2>/dev/null || true)"
+[[ -z "$ARGS" ]] && exit 0
 nvim_call code-preview.post_tool handle "$ARGS" >/dev/null

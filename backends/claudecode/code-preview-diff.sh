@@ -11,6 +11,10 @@
 # Claude Code falls back to its native permission flow as if the plugin
 # weren't installed. See docs/adr/0005-core-handler-runs-in-process.md.
 
+# No `set -e`: the shim is the boundary between the agent and the plugin.
+# When jq fails on a malformed payload or nvim_call returns rc=2, we want
+# to exit 0 (abstain) so the agent falls back to its native flow rather
+# than seeing a hook failure.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -27,5 +31,7 @@ if [[ -z "${NVIM_SOCKET:-}" ]]; then
   exit 0
 fi
 
-ARGS="$(jq -nc --argjson r "$INPUT" --arg b claudecode '[$r, $b]')"
+ARGS="$(jq -nc --argjson r "$INPUT" --arg b claudecode '[$r, $b]' 2>/dev/null || true)"
+# Malformed payload (jq couldn't parse) — abstain silently.
+[[ -z "$ARGS" ]] && exit 0
 nvim_call code-preview.pre_tool handle "$ARGS"

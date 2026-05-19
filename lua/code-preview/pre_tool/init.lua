@@ -37,6 +37,30 @@ local function tmpdir()
   return os.getenv("TMPDIR") or "/tmp"
 end
 
+-- One-time startup sweep of leftover proposal tempfiles.
+--
+-- The bash post-tool ran `rm -f /tmp/claude-diff-original* /tmp/claude-diff-proposed*
+-- /tmp/claude-patch-*` after every PostToolUse hook — a global wildcard sweep.
+-- The new in-process flow doesn't have a natural hook to run that on every
+-- post-tool (and per-proposal tracking is a follow-up — see the parity-port
+-- hygiene issue). To prevent unbounded accumulation across long sessions
+-- where Neovim doesn't restart, run the sweep once at setup(). macOS doesn't
+-- auto-evict /tmp under a few days, so this matters in practice.
+function M.sweep_leftover_tempfiles()
+  local dir = tmpdir()
+  local fd = vim.loop.fs_scandir(dir)
+  if not fd then return end
+  while true do
+    local name = vim.loop.fs_scandir_next(fd)
+    if not name then break end
+    if name:match("^claude%-diff%-original%-") or
+       name:match("^claude%-diff%-proposed%-") or
+       name:match("^claude%-patch%-") then
+      pcall(vim.loop.fs_unlink, dir .. "/" .. name)
+    end
+  end
+end
+
 local function write_file(path, content)
   local fh = assert(io.open(path, "w"))
   fh:write(content or "")
@@ -77,71 +101,50 @@ end
 
 -- ── Per-tool handlers ───────────────────────────────────────────
 
-local function handle_edit(input, cfg)
-  local file_path = input.tool_input.file_path
+-- Compute the orig/proposed tempfile pair for a single-file tool and hand off
+-- to diff.show_diff (or skip when visible_only excludes the file). The only
+-- per-tool variation is how `proposed_content` is computed, so each handler
+-- below is a one-liner around this helper.
+local function present_single_file(file_path, proposed_content, input, cfg)
   local id = next_id()
   local orig = tmpdir() .. "/claude-diff-original-" .. id
   local prop = tmpdir() .. "/claude-diff-proposed-" .. id
 
   copy_or_empty(file_path, orig)
+  write_file(prop, proposed_content)
+
+  if not should_show(cfg, file_path) then
+    log.info(log.fmt("pre_tool: skipping diff for %s (visible_only)", file_path))
+    return
+  end
+
+  local display = file_path
+  if input.cwd and file_path:sub(1, #input.cwd + 1) == input.cwd .. "/" then
+    display = file_path:sub(#input.cwd + 2)
+  end
+  diff.show_diff(orig, prop, display, file_path, nil)
+end
+
+local function handle_edit(input, cfg)
+  local fp = input.tool_input.file_path
   local content = apply_edit.apply(
-    file_path,
+    fp,
     input.tool_input.old_string or "",
     input.tool_input.new_string or "",
     input.tool_input.replace_all == true
   )
-  write_file(prop, content)
-
-  if should_show(cfg, file_path) then
-    local display = file_path
-    if input.cwd and file_path:sub(1, #input.cwd + 1) == input.cwd .. "/" then
-      display = file_path:sub(#input.cwd + 2)
-    end
-    diff.show_diff(orig, prop, display, file_path, nil)
-  else
-    log.info(log.fmt("pre_tool: skipping diff for %s (visible_only)", file_path))
-  end
+  present_single_file(fp, content, input, cfg)
 end
 
 local function handle_write(input, cfg)
-  local file_path = input.tool_input.file_path
-  local id = next_id()
-  local orig = tmpdir() .. "/claude-diff-original-" .. id
-  local prop = tmpdir() .. "/claude-diff-proposed-" .. id
-
-  copy_or_empty(file_path, orig)
-  write_file(prop, input.tool_input.content or "")
-
-  if should_show(cfg, file_path) then
-    local display = file_path
-    if input.cwd and file_path:sub(1, #input.cwd + 1) == input.cwd .. "/" then
-      display = file_path:sub(#input.cwd + 2)
-    end
-    diff.show_diff(orig, prop, display, file_path, nil)
-  else
-    log.info(log.fmt("pre_tool: skipping diff for %s (visible_only)", file_path))
-  end
+  local fp = input.tool_input.file_path
+  present_single_file(fp, input.tool_input.content or "", input, cfg)
 end
 
 local function handle_multi_edit(input, cfg)
-  local file_path = input.tool_input.file_path
-  local id = next_id()
-  local orig = tmpdir() .. "/claude-diff-original-" .. id
-  local prop = tmpdir() .. "/claude-diff-proposed-" .. id
-
-  copy_or_empty(file_path, orig)
-  local content = apply_multi_edit.apply(file_path, input.tool_input.edits or {})
-  write_file(prop, content)
-
-  if should_show(cfg, file_path) then
-    local display = file_path
-    if input.cwd and file_path:sub(1, #input.cwd + 1) == input.cwd .. "/" then
-      display = file_path:sub(#input.cwd + 2)
-    end
-    diff.show_diff(orig, prop, display, file_path, nil)
-  else
-    log.info(log.fmt("pre_tool: skipping diff for %s (visible_only)", file_path))
-  end
+  local fp = input.tool_input.file_path
+  local content = apply_multi_edit.apply(fp, input.tool_input.edits or {})
+  present_single_file(fp, content, input, cfg)
 end
 
 local function handle_bash(input)
@@ -243,7 +246,6 @@ function M.handle(raw, backend)
   end
 
   return emitters.emit(backend, {
-    has_nvim = true,
     tool_name = tool_name,
     defer_claude_permissions = cfg.diff and cfg.diff.defer_claude_permissions or false,
   })
