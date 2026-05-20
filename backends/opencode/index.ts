@@ -1,105 +1,98 @@
-// index.ts — OpenCode plugin entry point
+// index.ts — OpenCode plugin entry point.
 //
-// Thin adapter that translates OpenCode's hook format to the normalized
-// JSON format and delegates to the unified core shell scripts.
+// After issue #47 phase 3, this plugin is a thin transport layer. It collects
+// OpenCode's {tool, args, directory} from each hook firing, JSON-encodes it,
+// and pipes it into the shell shim under backends/opencode/, which performs
+// socket discovery and RPCs the in-process orchestrator. Tool-name and
+// camelCase→snake_case mapping live Lua-side (pre_tool.normalisers.opencode).
+//
+// See docs/adr/0006-opencode-defers-os-independence-to-46.md for why this
+// keeps the bash shim instead of speaking nvim RPC directly from TS.
 
 import type { Plugin } from "@opencode-ai/plugin"
 import { execSync } from "child_process"
-import { readFileSync } from "fs"
+import { existsSync, readFileSync } from "fs"
 import { resolve, dirname } from "path"
 import { fileURLToPath } from "url"
-
-// ── Resolve path to bin/ directory ───────────────────────────────
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-function binDir(): string {
-  // When installed to .opencode/plugins/, bin-path.txt contains the
-  // absolute path to the plugin's bin/ directory.
+// ── Shim path resolution ─────────────────────────────────────────
+// bin-path.txt was historically written by the installer pointing at the
+// plugin's bin/ directory. Phase 3 changes its meaning to the plugin root
+// (so we can locate backends/opencode/ alongside bin/). For users who
+// upgrade without re-running :CodePreviewInstallOpenCodeHooks, fall back to
+// the legacy interpretation by stepping up one directory.
+//
+// Transitional for v<X.Y>; remove the legacy fallback in v<X+1>.0.
+
+function resolveShim(name: string): string | null {
+  const root = readBinPath()
+  if (!root) return null
+  const primary = resolve(root, "backends/opencode", name)
+  if (existsSync(primary)) return primary
+  const legacy = resolve(root, "..", "backends/opencode", name)
+  if (existsSync(legacy)) return legacy
+  return null
+}
+
+function readBinPath(): string | null {
   try {
     return readFileSync(resolve(__dirname, "bin-path.txt"), "utf-8").trim()
   } catch {
-    // Fallback for development: resolve relative to plugin source
-    return resolve(__dirname, "../../bin")
+    // Development fallback: plugin source lives at <root>/backends/opencode/.
+    return resolve(__dirname, "../..")
   }
 }
 
-// ── Tool name mapping ────────────────────────────────────────────
+// ── Tool allowlist ───────────────────────────────────────────────
+// OpenCode tools as of 2026-05-19 the plugin previews: edit, write,
+// multiedit, bash, apply_patch. Tools we deliberately ignore (fire-and-
+// forget reads): read, glob, grep, list, todoread, todowrite, webfetch,
+// websearch, task. Short-circuiting these here saves a bash fork + RPC per
+// firing — OpenCode reads/greps prolifically.
+//
+// Symptom of forgetting to add a new structured-edit tool: no diff appears
+// for it. Update this set and pre_tool.normalisers.opencode's tool map
+// together.
+const PREVIEW_TOOLS = new Set(["edit", "write", "multiedit", "bash", "apply_patch"])
 
-const TOOL_MAP: Record<string, string> = {
-  edit: "Edit",
-  write: "Write",
-  multiedit: "MultiEdit",
-  bash: "Bash",
-  apply_patch: "ApplyPatch",
-}
+// ── Shim invocation ──────────────────────────────────────────────
 
-// ── Format translation ──────────────────────────────────────────
-
-function toNormalizedJson(
-  tool: string,
-  args: Record<string, any>,
-  cwd: string,
-): string | null {
-  const toolName = TOOL_MAP[tool]
-  if (!toolName) return null
-
-  const toolInput: Record<string, any> = {}
-
-  // Resolve file path (OpenCode may pass relative paths)
-  if (args.filePath !== undefined) {
-    const p = args.filePath as string
-    toolInput.file_path = p && !p.startsWith("/") ? resolve(cwd, p) : p
+function runShim(scriptName: string, payload: object): void {
+  const shim = resolveShim(scriptName)
+  if (!shim) {
+    // Symmetric with the timeout branch below: surface enough breadcrumb
+    // that a misconfigured bin-path.txt isn't a silently-broken plugin.
+    // eslint-disable-next-line no-console
+    console.debug(`[code-preview] could not resolve shim ${scriptName}`)
+    return
   }
-
-  // Edit fields (camelCase → snake_case)
-  if (args.oldString !== undefined) toolInput.old_string = args.oldString
-  if (args.newString !== undefined) toolInput.new_string = args.newString
-  if (args.replaceAll !== undefined) toolInput.replace_all = args.replaceAll
-
-  // Write fields
-  if (args.content !== undefined) toolInput.content = args.content
-
-  // MultiEdit fields
-  if (args.edits !== undefined) {
-    toolInput.edits = (args.edits as any[]).map((e) => ({
-      old_string: e.oldString,
-      new_string: e.newString,
-    }))
-  }
-
-  // Bash fields
-  if (args.command !== undefined) toolInput.command = args.command
-
-  // ApplyPatch fields — handle both possible field names from different models
-  if (args.patchText !== undefined) toolInput.patch_text = args.patchText
-  if (args.patch !== undefined) toolInput.patch_text = args.patch
-
-  return JSON.stringify({ tool_name: toolName, cwd, tool_input: toolInput })
-}
-
-// ── Core script execution ───────────────────────────────────────
-
-function runCoreScript(script: string, json: string): void {
-  const bin = binDir()
   try {
-    execSync(`"${bin}/${script}"`, {
-      input: json,
+    execSync(`"${shim}"`, {
+      input: JSON.stringify(payload),
       env: { ...process.env, CODE_PREVIEW_BACKEND: "opencode" },
       timeout: 15000,
       stdio: ["pipe", "pipe", "pipe"],
     })
-  } catch {
-    // Errors are non-fatal — the diff preview is best-effort
+  } catch (err: any) {
+    // Abstain on any failure. Log timeouts at debug-equivalent because
+    // a silent 15s hang is otherwise hard to diagnose; everything else
+    // is treated as best-effort and swallowed.
+    if (err && (err.code === "ETIMEDOUT" || err.signal === "SIGTERM")) {
+      // eslint-disable-next-line no-console
+      console.debug(`[code-preview] ${scriptName} timed out after 15s`)
+    }
   }
 }
 
-// ── Hook serialization ─────────────────────────────────────────
-// OpenCode may fire tool.execute.after(file1) and tool.execute.before(file2)
-// concurrently. Without serialization, the close_diff from file1's after-hook
-// races with the show_diff from file2's before-hook, killing file2's preview.
-// A simple queue ensures hooks execute one at a time.
+// ── Hook serialisation ───────────────────────────────────────────
+// TS→nvim send-order preservation: OpenCode fires before(A) and after(B)
+// concurrently; without this, RPCs can reorder during socket discovery and a
+// post-tool close can land before its matching pre-tool open. The in-process
+// Lua orchestrator serialises *within* nvim's main thread, but cannot fix
+// out-of-order arrivals from the TS side.
 
 let hookQueue: Promise<void> = Promise.resolve()
 
@@ -110,22 +103,22 @@ function enqueueHook(fn: () => void): Promise<void> {
   return hookQueue
 }
 
-// ── Plugin entry point ──────────────────────────────────────────
+// ── Plugin entry point ───────────────────────────────────────────
 
 const plugin: Plugin = async ({ directory }) => {
   return {
     "tool.execute.before": async (input, output) => {
-      const args = output.args as Record<string, any>
-      const json = toNormalizedJson(input.tool, args, directory)
-      if (!json) return
-      await enqueueHook(() => runCoreScript("core-pre-tool.sh", json))
+      if (!PREVIEW_TOOLS.has(input.tool)) return
+      const args = (output.args as Record<string, any>) ?? {}
+      const payload = { tool: input.tool, args, cwd: directory }
+      await enqueueHook(() => runShim("code-preview-diff.sh", payload))
     },
 
     "tool.execute.after": async (input, _output) => {
-      const args = (input as any).args ?? {}
-      const json = toNormalizedJson(input.tool, args, directory)
-      if (!json) return
-      await enqueueHook(() => runCoreScript("core-post-tool.sh", json))
+      if (!PREVIEW_TOOLS.has(input.tool)) return
+      const args = ((input as any).args as Record<string, any>) ?? {}
+      const payload = { tool: input.tool, args, cwd: directory }
+      await enqueueHook(() => runShim("code-close-diff.sh", payload))
     },
   }
 }

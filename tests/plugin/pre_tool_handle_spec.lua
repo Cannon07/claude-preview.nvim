@@ -72,7 +72,8 @@ describe("pre_tool.handle (emitter output)", function()
   end)
 
   it("opencode emits empty stdout", function()
-    local out = pre_tool.handle(payload("Edit", { file_path = "/tmp/x" }), "opencode")
+    local raw = { tool = "edit", cwd = "/proj", args = { filePath = "/tmp/x" } }
+    local out = pre_tool.handle(raw, "opencode")
     assert.equals("", out)
   end)
 

@@ -32,7 +32,9 @@ local function patch_paths(patch_text, cwd)
     end
     local custom = line:match("^%*%*%* %a+ File:%s*(.+)$")
     if custom then
-      table.insert(paths, custom:gsub("%s+$", ""))
+      -- gsub returns (string, count); parens discard the count so table.insert
+      -- doesn't fall into its (t, pos, value) 3-arg form.
+      table.insert(paths, (custom:gsub("%s+$", "")))
     end
   end
   -- Resolve relative paths against cwd.

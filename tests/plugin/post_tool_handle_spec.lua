@@ -55,6 +55,29 @@ describe("post_tool.handle (return value)", function()
   end)
 end)
 
+describe("post_tool.handle (ApplyPatch)", function()
+  it("custom-patch format (*** Update File:) does not raise", function()
+    -- Regression: gsub returns (string, count); without parens around the
+    -- gsub call, table.insert falls into its 3-arg (t, pos, value) form and
+    -- raises "bad argument #2 to 'insert' (number expected, got string)".
+    local patch = table.concat({
+      "*** Begin Patch",
+      "*** Update File: a.txt",
+      "@@",
+      "-old",
+      "+new",
+      "*** Update File: b.txt",
+      "@@",
+      "-old",
+      "+new",
+      "*** End Patch",
+    }, "\n")
+    assert.has_no.errors(function()
+      post_tool.handle(payload("ApplyPatch", { patch_text = patch }), "claudecode")
+    end)
+  end)
+end)
+
 describe("post_tool.handle (robustness)", function()
   it("missing tool_input does not raise", function()
     assert.has_no.errors(function()

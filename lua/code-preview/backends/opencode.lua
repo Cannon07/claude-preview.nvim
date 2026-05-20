@@ -10,10 +10,6 @@ local function plugin_root()
   return vim.fn.fnamemodify(lua_dir, ":h:h:h")
 end
 
-local function bin_dir()
-  return plugin_root() .. "/bin"
-end
-
 local function plugin_source_dir()
   return plugin_root() .. "/backends/opencode"
 end
@@ -44,12 +40,28 @@ function M.install()
     end
   end
 
-  -- Write bin-path.txt so the plugin can find the core scripts
+  -- Write bin-path.txt pointing at the plugin root. The TS plugin derives
+  -- both backends/opencode/ (shim location) and bin/ (legacy callers) from
+  -- this single path. Historically this file pointed at bin/ directly; the
+  -- TS side keeps a transitional fallback for that legacy value.
   local bin_path_file = target .. "/bin-path.txt"
   local bf = io.open(bin_path_file, "w")
   if bf then
-    bf:write(bin_dir())
+    bf:write(plugin_root())
     bf:close()
+  end
+
+  -- Ensure shim scripts are executable in-tree. The TS plugin execSyncs them
+  -- directly from <plugin_root>/backends/opencode/. No-op on Windows: the
+  -- permissions model differs and bash isn't the end-state for opencode-on-
+  -- Windows anyway (see ADR-0006). #46 will resolve the Windows story.
+  if vim.fn.has("unix") == 1 then
+    for _, script in ipairs({ "code-preview-diff.sh", "code-close-diff.sh" }) do
+      local script_path = source .. "/" .. script
+      if vim.fn.filereadable(script_path) == 1 then
+        vim.fn.system({ "chmod", "+x", script_path })
+      end
+    end
   end
 
   vim.notify("[code-preview] OpenCode plugin installed → " .. target, vim.log.levels.INFO)
