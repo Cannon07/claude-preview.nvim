@@ -25,7 +25,7 @@ const __dirname = dirname(__filename)
 // upgrade without re-running :CodePreviewInstallOpenCodeHooks, fall back to
 // the legacy interpretation by stepping up one directory.
 //
-// Transitional for v<X.Y>; remove the legacy fallback in v<X+1>.0.
+// Transitional for v2.3; remove the legacy fallback in v3.0.
 
 function resolveShim(name: string): string | null {
   const root = readBinPath()
