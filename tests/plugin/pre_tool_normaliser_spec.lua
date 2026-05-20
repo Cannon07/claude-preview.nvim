@@ -49,6 +49,14 @@ describe("normalisers.normalise (opencode)", function()
     assert.equals("x",      out.tool_input.content)
   end)
 
+  it("collapses .. segments to canonical path", function()
+    -- Matches the old TS plugin's path.resolve semantics so internal keys
+    -- compare equal across backends.
+    local raw = { tool = "edit", cwd = "/proj/sub", args = { filePath = "../foo.lua" } }
+    local out = normalisers.normalise(raw, "opencode")
+    assert.equals("/proj/foo.lua", out.tool_input.file_path)
+  end)
+
   it("maps MultiEdit edits array", function()
     local raw = {
       tool = "multiedit",

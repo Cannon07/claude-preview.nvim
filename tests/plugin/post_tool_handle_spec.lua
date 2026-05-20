@@ -56,10 +56,17 @@ describe("post_tool.handle (return value)", function()
 end)
 
 describe("post_tool.handle (ApplyPatch)", function()
-  it("custom-patch format (*** Update File:) does not raise", function()
+  it("custom-patch format (*** Update File:) closes one preview per file", function()
     -- Regression: gsub returns (string, count); without parens around the
     -- gsub call, table.insert falls into its 3-arg (t, pos, value) form and
     -- raises "bad argument #2 to 'insert' (number expected, got string)".
+    -- Beyond not crashing, post_tool must call diff.close_for_file once per
+    -- patched path with the cwd-resolved absolute path.
+    local diff = require("code-preview.diff")
+    local closed = {}
+    local orig = diff.close_for_file
+    diff.close_for_file = function(p) table.insert(closed, p) end
+
     local patch = table.concat({
       "*** Begin Patch",
       "*** Update File: a.txt",
@@ -72,9 +79,10 @@ describe("post_tool.handle (ApplyPatch)", function()
       "+new",
       "*** End Patch",
     }, "\n")
-    assert.has_no.errors(function()
-      post_tool.handle(payload("ApplyPatch", { patch_text = patch }), "claudecode")
-    end)
+    post_tool.handle(payload("ApplyPatch", { patch_text = patch }), "claudecode")
+    diff.close_for_file = orig
+
+    assert.are.same({ "/proj/a.txt", "/proj/b.txt" }, closed)
   end)
 end)
 

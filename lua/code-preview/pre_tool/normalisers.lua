@@ -31,11 +31,18 @@ local OPENCODE_TOOL_MAP = {
   apply_patch = "ApplyPatch",
 }
 
+-- Resolve a possibly-relative filePath against cwd, then collapse ".."/"."
+-- segments so internal keys (active_diffs, changes registry) are canonical.
+-- Matches Node's path.resolve semantics the old TS plugin used; without it
+-- opencode keys could be raw "/proj/../escape.txt" strings that don't
+-- compare equal to claudecode-shaped keys for the same logical file.
 local function resolve_path(p, cwd)
   if not p or p == "" then return p end
-  if p:sub(1, 1) == "/" then return p end
-  if cwd and cwd ~= "" then return cwd .. "/" .. p end
-  return p
+  local abs = p
+  if p:sub(1, 1) ~= "/" and cwd and cwd ~= "" then
+    abs = cwd .. "/" .. p
+  end
+  return vim.fs.normalize(abs)
 end
 
 local function opencode(raw)
