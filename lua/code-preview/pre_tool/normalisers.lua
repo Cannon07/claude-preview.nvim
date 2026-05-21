@@ -173,11 +173,61 @@ local function copilot(raw)
   }
 end
 
+-- Codex's hook payload is almost canonical: top-level {tool_name, cwd,
+-- tool_input}. The only real translation is apply_patch → ApplyPatch with
+-- tool_input.command (the raw `*** Begin Patch ... *** End Patch` text)
+-- moved to tool_input.patch_text. Edit/Write/Bash/ApplyPatch are otherwise
+-- passthrough — codex models route all edits through apply_patch today,
+-- but the Edit/Write/Bash branches exist defensively in case a future
+-- codex version (or an MCP server) emits those names with Claude-Code-
+-- style field shapes. resolve_path is applied for parity with the other
+-- backends so internal keys compare equal across agents.
+local function codex(raw)
+  local tool = (raw and raw.tool_name) or ""
+  local cwd  = (raw and raw.cwd) or ""
+  local args = (raw and raw.tool_input) or {}
+
+  local function blank(s) return s == nil or s == "" end
+
+  if tool == "apply_patch" then
+    if blank(args.command) then
+      return { tool_name = nil, cwd = cwd, tool_input = {} }
+    end
+    return {
+      tool_name  = "ApplyPatch",
+      cwd        = cwd,
+      tool_input = { patch_text = args.command },
+    }
+  elseif tool == "ApplyPatch" then
+    if blank(args.patch_text) then
+      return { tool_name = nil, cwd = cwd, tool_input = {} }
+    end
+    return { tool_name = "ApplyPatch", cwd = cwd, tool_input = args }
+  elseif tool == "Edit" or tool == "Write" then
+    local fp = resolve_path(args.file_path, cwd)
+    if blank(fp) then
+      return { tool_name = nil, cwd = cwd, tool_input = {} }
+    end
+    local out = {}
+    for k, v in pairs(args) do out[k] = v end
+    out.file_path = fp
+    return { tool_name = tool, cwd = cwd, tool_input = out }
+  elseif tool == "Bash" then
+    if blank(args.command) then
+      return { tool_name = nil, cwd = cwd, tool_input = {} }
+    end
+    return { tool_name = "Bash", cwd = cwd, tool_input = args }
+  end
+
+  return { tool_name = nil, cwd = cwd, tool_input = {} }
+end
+
 M.normalisers = {
   claudecode = identity,
   opencode   = opencode,
   copilot    = copilot,
-  -- codex / gemini will land their own normalisers as they flip.
+  codex      = codex,
+  -- gemini will land its own normaliser when it flips.
 }
 
 --- @param raw table  decoded hook payload

@@ -1,114 +1,53 @@
 #!/usr/bin/env bash
-# code-preview-diff.sh — PreToolUse hook adapter for OpenAI Codex CLI.
+# code-preview-diff.sh — PreToolUse hook entry for OpenAI Codex CLI.
 #
-# Translates Codex's hook payload (stdin JSON with tool_name/tool_input) into
-# the normalized {tool_name, cwd, tool_input} format consumed by
-# bin/core-pre-tool.sh, then delegates to it.
+# After issue #47 phase 3, this shim does almost nothing: it discovers the
+# running Neovim's socket and makes a single RPC call into the in-process
+# orchestrator (lua/code-preview/pre_tool/init.lua), then prints whatever the
+# orchestrator returns. The bash that used to translate Codex's
+# {tool_name, cwd, tool_input} payload (and the apply_patch → ApplyPatch
+# field move) now lives in lua/code-preview/pre_tool/normalisers.lua
+# (codex entry).
 #
-# Field mapping:
-#   apply_patch        → ApplyPatch  (tool_input.command holds the patch text;
-#                                     we move it under .patch_text)
-#   ApplyPatch         → ApplyPatch  (passthrough; canonical name)
-#   Edit               → Edit        (passthrough; assumes Claude-Code-style
-#                                     {file_path, old_string, new_string})
-#   Write              → Write       (passthrough; assumes {file_path, content})
-#   Bash               → Bash        (passthrough)
-#   read/glob/MCP/...  → ignored
-#
-# Note: today's Codex models route all file edits through `apply_patch`. The
-# Edit/Write branches exist defensively in case a future Codex version (or
-# an MCP server) emits those names with Claude-Code-style field shapes.
+# When Neovim is unreachable, the shim abstains: exit 0 with no stdout.
+# Codex then falls back to its native ask-before-write loop as if the plugin
+# weren't installed. See docs/adr/0005-core-handler-runs-in-process.md.
 
+# No `set -e`: the shim is the boundary between the agent and the plugin.
+# When jq fails on a malformed payload or nvim_call returns rc=2, we want
+# to exit 0 (abstain) so the agent falls back to its native flow rather
+# than seeing a hook failure.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BIN_DIR="$SCRIPT_DIR/../../bin"
-export CODE_PREVIEW_BACKEND="codex"
 
 INPUT="$(cat)"
 
-TOOL="$(printf '%s' "$INPUT" | jq -r '.tool_name // ""')"
-CWD="$(printf '%s' "$INPUT" | jq -r '.cwd // ""')"
-
-# Skip noisy/no-op tools before the expensive socket/log-setup RPC.
+# Fast-path filter for tools that never produce a preview. Codex hits hooks
+# directly (no TS-side allowlist like opencode), so every tool firing —
+# including the very chatty read/view/glob/grep/ls/list_files and MCP
+# tools — would otherwise pay for socket discovery + an RPC round-trip just
+# for the Lua normaliser to return tool_name=nil. The Lua map in
+# pre_tool.normalisers remains the source of truth; this case is purely a
+# perf filter.
+TOOL="$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || true)"
 case "$TOOL" in
   ""|read|view|glob|grep|ls|list_files) exit 0 ;;
-esac
-# MCP tools follow `mcp__server__name`; we don't preview them.
-case "$TOOL" in
   mcp__*) exit 0 ;;
 esac
 
-# Logging — mirrors copilot/code-preview-diff.sh. Gated on `debug = true`.
-log() { :; }
-# shellcheck source=/dev/null
+CWD="$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || true)"
+
+# Socket discovery — silent failure is fine, we abstain below.
 source "$BIN_DIR/nvim-socket.sh" "$CWD" 2>/dev/null || true
-# shellcheck source=/dev/null
-source "$BIN_DIR/nvim-call.sh" 2>/dev/null || true
-if [[ -n "${NVIM_SOCKET:-}" ]]; then
-  _CTX="$(nvim_call code-preview.log state '[]' || echo '{}')"
-  _DBG=$(echo "$_CTX" | jq -r '.debug // false' 2>/dev/null)
-  _LOG=$(echo "$_CTX" | jq -r '.log_file // ""' 2>/dev/null)
-  if [[ "$_DBG" == "true" && -n "$_LOG" ]]; then
-    log() { printf '[%s] [INFO] codex/pre: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$_LOG"; }
-  fi
+source "$BIN_DIR/nvim-call.sh"
+
+if [[ -z "${NVIM_SOCKET:-}" ]]; then
+  exit 0
 fi
 
-log "tool=$TOOL cwd=$CWD"
-
-case "$TOOL" in
-  apply_patch)
-    # Codex stores the raw `*** Begin Patch ... *** End Patch` text in
-    # tool_input.command. Our ApplyPatch handler in core-pre-tool.sh reads
-    # tool_input.patch_text, so move the field.
-    PATCH="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""')"
-    if [[ -z "$PATCH" ]]; then
-      log "apply_patch with empty/missing patch text — skipping"
-      exit 0
-    fi
-    NORMALIZED="$(printf '%s' "$INPUT" | jq '{
-      tool_name: "ApplyPatch",
-      cwd: .cwd,
-      tool_input: { patch_text: (.tool_input.command // "") }
-    }')"
-    ;;
-
-  ApplyPatch|Edit|Write)
-    # Edit/Write-family tools require a non-empty file_path. Without it,
-    # core-pre-tool.sh would push a broken diff downstream.
-    FP="$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // ""')"
-    if [[ -z "$FP" ]]; then
-      log "$TOOL with empty/missing file_path — skipping"
-      exit 0
-    fi
-    NORMALIZED="$(printf '%s' "$INPUT" | jq '{
-      tool_name: .tool_name,
-      cwd: .cwd,
-      tool_input: .tool_input
-    }')"
-    ;;
-
-  Bash)
-    # Bash needs a non-empty command to be useful (rm detection, shell-write
-    # detection both run on the command string).
-    CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""')"
-    if [[ -z "$CMD" ]]; then
-      log "Bash with empty/missing command — skipping"
-      exit 0
-    fi
-    NORMALIZED="$(printf '%s' "$INPUT" | jq '{
-      tool_name: .tool_name,
-      cwd: .cwd,
-      tool_input: .tool_input
-    }')"
-    ;;
-
-  *)
-    log "unhandled tool=$TOOL — exiting"
-    exit 0
-    ;;
-esac
-
-log "translated tool=$TOOL → $(printf '%s' "$NORMALIZED" | jq -c '{tool_name, file: .tool_input.file_path // "", has_patch: (.tool_input.patch_text != null)}' 2>/dev/null || echo 'parse-error')"
-
-printf '%s' "$NORMALIZED" | "$BIN_DIR/core-pre-tool.sh"
+ARGS="$(jq -nc --argjson r "$INPUT" --arg b codex '[$r, $b]' 2>/dev/null || true)"
+# Malformed payload (jq couldn't parse) — abstain silently.
+[[ -z "$ARGS" ]] && exit 0
+nvim_call code-preview.pre_tool handle "$ARGS"

@@ -246,3 +246,129 @@ describe("normalisers.normalise (copilot)", function()
     assert.equals("/proj/p.lua",  out.tool_input.file_path)
   end)
 end)
+
+describe("normalisers.normalise (codex)", function()
+  -- Codex's hook payload is almost canonical: top-level {tool_name, cwd,
+  -- tool_input}. The only real translation is apply_patch → ApplyPatch with
+  -- tool_input.command moved to tool_input.patch_text.
+
+  it("apply_patch translates to ApplyPatch with patch_text", function()
+    local out = normalisers.normalise({
+      tool_name  = "apply_patch",
+      cwd        = "/proj",
+      tool_input = { command = "*** Begin Patch\n*** End Patch\n" },
+    }, "codex")
+    assert.equals("ApplyPatch", out.tool_name)
+    assert.equals("*** Begin Patch\n*** End Patch\n", out.tool_input.patch_text)
+  end)
+
+  it("ApplyPatch passes through unchanged", function()
+    local out = normalisers.normalise({
+      tool_name  = "ApplyPatch",
+      cwd        = "/proj",
+      tool_input = { patch_text = "PATCH" },
+    }, "codex")
+    assert.equals("ApplyPatch", out.tool_name)
+    assert.equals("PATCH",      out.tool_input.patch_text)
+  end)
+
+  it("Edit passthrough resolves relative file_path", function()
+    local out = normalisers.normalise({
+      tool_name  = "Edit",
+      cwd        = "/proj",
+      tool_input = { file_path = "src/foo.lua", old_string = "a", new_string = "b" },
+    }, "codex")
+    assert.equals("Edit",              out.tool_name)
+    assert.equals("/proj/src/foo.lua", out.tool_input.file_path)
+    assert.equals("a",                 out.tool_input.old_string)
+    assert.equals("b",                 out.tool_input.new_string)
+  end)
+
+  it("Edit collapses .. segments via resolve_path", function()
+    local out = normalisers.normalise({
+      tool_name  = "Edit",
+      cwd        = "/proj/sub",
+      tool_input = { file_path = "../foo.lua" },
+    }, "codex")
+    assert.equals("/proj/foo.lua", out.tool_input.file_path)
+  end)
+
+  it("Write passthrough preserves content and resolves file_path", function()
+    local out = normalisers.normalise({
+      tool_name  = "Write",
+      cwd        = "/proj",
+      tool_input = { file_path = "new.lua", content = "hello" },
+    }, "codex")
+    assert.equals("Write",         out.tool_name)
+    assert.equals("/proj/new.lua", out.tool_input.file_path)
+    assert.equals("hello",         out.tool_input.content)
+  end)
+
+  it("Bash passthrough preserves command", function()
+    local out = normalisers.normalise({
+      tool_name  = "Bash",
+      cwd        = "/proj",
+      tool_input = { command = "ls" },
+    }, "codex")
+    assert.equals("Bash", out.tool_name)
+    assert.equals("ls",   out.tool_input.command)
+  end)
+
+  it("apply_patch with empty command drops tool_name", function()
+    local out = normalisers.normalise({
+      tool_name  = "apply_patch",
+      cwd        = "/proj",
+      tool_input = { command = "" },
+    }, "codex")
+    assert.is_nil(out.tool_name)
+  end)
+
+  it("Edit with empty file_path drops tool_name", function()
+    local out = normalisers.normalise({
+      tool_name  = "Edit",
+      cwd        = "/proj",
+      tool_input = { file_path = "", old_string = "a", new_string = "b" },
+    }, "codex")
+    assert.is_nil(out.tool_name)
+  end)
+
+  it("Write with empty file_path drops tool_name", function()
+    local out = normalisers.normalise({
+      tool_name  = "Write",
+      cwd        = "/proj",
+      tool_input = { file_path = "", content = "x" },
+    }, "codex")
+    assert.is_nil(out.tool_name)
+  end)
+
+  it("Bash with empty command drops tool_name", function()
+    local out = normalisers.normalise({
+      tool_name  = "Bash",
+      cwd        = "/proj",
+      tool_input = { command = "" },
+    }, "codex")
+    assert.is_nil(out.tool_name)
+  end)
+
+  it("mcp__* tools yield nil tool_name", function()
+    -- The shim fast-path filter drops these before RPC, but the Lua map
+    -- remains the source of truth for correctness.
+    local out = normalisers.normalise({
+      tool_name  = "mcp__server__do_thing",
+      cwd        = "/proj",
+      tool_input = { whatever = true },
+    }, "codex")
+    assert.is_nil(out.tool_name)
+  end)
+
+  it("noise tools (read/view/glob/grep/ls/list_files) yield nil tool_name", function()
+    for _, tool in ipairs({ "read", "view", "glob", "grep", "ls", "list_files" }) do
+      local out = normalisers.normalise({
+        tool_name  = tool,
+        cwd        = "/proj",
+        tool_input = {},
+      }, "codex")
+      assert.is_nil(out.tool_name)
+    end
+  end)
+end)
