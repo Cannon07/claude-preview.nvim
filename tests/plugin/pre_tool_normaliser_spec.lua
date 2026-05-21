@@ -100,3 +100,149 @@ describe("normalisers.normalise (opencode)", function()
     assert.is_nil(out.tool_name)
   end)
 end)
+
+describe("normalisers.normalise (copilot)", function()
+  -- Copilot's hook payload is {toolName, cwd, toolArgs} where toolArgs is a
+  -- JSON-encoded string for preToolUse (an object for postToolUse). For
+  -- apply_patch the string is the raw patch text — not JSON.
+
+  local function copilot_pre(tool_name, args_obj)
+    return {
+      toolName = tool_name,
+      cwd      = "/proj",
+      toolArgs = vim.json.encode(args_obj),
+    }
+  end
+
+  it("edit maps to canonical Edit with resolved absolute path", function()
+    local out = normalisers.normalise(
+      copilot_pre("edit", { path = "src/foo.lua", old_str = "a", new_str = "b" }), "copilot")
+    assert.are.same({
+      tool_name = "Edit",
+      cwd       = "/proj",
+      tool_input = {
+        file_path   = "/proj/src/foo.lua",
+        old_string  = "a",
+        new_string  = "b",
+        replace_all = false,
+      },
+    }, out)
+  end)
+
+  it("str_replace aliases to Edit", function()
+    local out = normalisers.normalise(
+      copilot_pre("str_replace", { path = "/abs/x", old_str = "x", new_str = "y" }), "copilot")
+    assert.equals("Edit",   out.tool_name)
+    assert.equals("/abs/x", out.tool_input.file_path)
+    assert.equals("x",      out.tool_input.old_string)
+    assert.equals("y",      out.tool_input.new_string)
+  end)
+
+  it("create maps to Write with file_text → content", function()
+    local out = normalisers.normalise(
+      copilot_pre("create", { path = "/proj/new.lua", file_text = "hello" }), "copilot")
+    assert.equals("Write",         out.tool_name)
+    assert.equals("/proj/new.lua", out.tool_input.file_path)
+    assert.equals("hello",         out.tool_input.content)
+  end)
+
+  it("write maps to Write and accepts content as fallback", function()
+    local out = normalisers.normalise(
+      copilot_pre("write", { path = "/proj/w.lua", content = "body" }), "copilot")
+    assert.equals("Write", out.tool_name)
+    assert.equals("body",  out.tool_input.content)
+  end)
+
+  it("bash maps to Bash with command", function()
+    local out = normalisers.normalise(
+      copilot_pre("bash", { command = "ls", description = "list" }), "copilot")
+    assert.equals("Bash", out.tool_name)
+    assert.equals("ls",   out.tool_input.command)
+  end)
+
+  it("apply_patch treats toolArgs string as raw patch text (not JSON)", function()
+    local out = normalisers.normalise({
+      toolName = "apply_patch",
+      cwd      = "/proj",
+      toolArgs = "*** Begin Patch\n*** End Patch\n",
+    }, "copilot")
+    assert.equals("ApplyPatch", out.tool_name)
+    assert.equals("*** Begin Patch\n*** End Patch\n", out.tool_input.patch_text)
+  end)
+
+  it("apply_patch with object toolArgs (postToolUse shape) stringifies it", function()
+    -- Mirrors the bash adapter's `if type==string then . else tojson end`.
+    local out = normalisers.normalise({
+      toolName = "apply_patch",
+      cwd      = "/proj",
+      toolArgs = { some = "object" },
+    }, "copilot")
+    assert.equals("ApplyPatch", out.tool_name)
+    assert.is_string(out.tool_input.patch_text)
+  end)
+
+  it("resolves relative path against cwd", function()
+    local out = normalisers.normalise(
+      copilot_pre("edit", { path = "src/rel.lua", old_str = "a", new_str = "b" }), "copilot")
+    assert.equals("/proj/src/rel.lua", out.tool_input.file_path)
+  end)
+
+  it("noise / unknown tool yields nil tool_name", function()
+    local out = normalisers.normalise(
+      copilot_pre("view", { path = "/tmp/whatever" }), "copilot")
+    assert.is_nil(out.tool_name)
+  end)
+
+  it("malformed JSON toolArgs is treated as empty args (no raise)", function()
+    -- E2E regression: Copilot must never send an empty-path Edit downstream.
+    -- The defensive blank-path branch drops tool_name to nil so the dispatcher
+    -- no-ops — matches the old bash shim's `if [[ -z "$FP" ]]; then exit 0`.
+    local out = normalisers.normalise({
+      toolName = "edit",
+      cwd      = "/proj",
+      toolArgs = "}{not json",
+    }, "copilot")
+    assert.is_nil(out.tool_name)
+  end)
+
+  it("Edit with explicit empty path drops tool_name (matches old bash guard)", function()
+    -- {"toolName":"edit","toolArgs":'{"path":"","old_str":"a","new_str":"b"}'}
+    -- The old shim exited 0 on empty $FP. Without this defensive branch the
+    -- payload would reach diff.show_diff with file_path="" and open a broken
+    -- diff tab. Keep parity by nilling tool_name.
+    local out = normalisers.normalise(
+      copilot_pre("edit", { path = "", old_str = "a", new_str = "b" }), "copilot")
+    assert.is_nil(out.tool_name)
+  end)
+
+  it("Write with explicit empty path drops tool_name", function()
+    local out = normalisers.normalise(
+      copilot_pre("create", { path = "", file_text = "x" }), "copilot")
+    assert.is_nil(out.tool_name)
+  end)
+
+  it("Bash with empty command drops tool_name", function()
+    local out = normalisers.normalise(
+      copilot_pre("bash", { command = "", description = "noop" }), "copilot")
+    assert.is_nil(out.tool_name)
+  end)
+
+  it("apply_patch with empty toolArgs string drops tool_name", function()
+    local out = normalisers.normalise({
+      toolName = "apply_patch",
+      cwd      = "/proj",
+      toolArgs = "",
+    }, "copilot")
+    assert.is_nil(out.tool_name)
+  end)
+
+  it("postToolUse object toolArgs is used directly", function()
+    local out = normalisers.normalise({
+      toolName = "edit",
+      cwd      = "/proj",
+      toolArgs = { path = "/proj/p.lua", old_str = "a", new_str = "b" },
+    }, "copilot")
+    assert.equals("Edit",         out.tool_name)
+    assert.equals("/proj/p.lua",  out.tool_input.file_path)
+  end)
+end)

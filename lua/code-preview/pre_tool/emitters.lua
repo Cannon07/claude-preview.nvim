@@ -32,7 +32,8 @@ end
 M.emitters = {
   claudecode = claudecode,
   opencode   = none,
-  -- codex / copilot / gemini default to `none` via the fallback below.
+  copilot    = none,
+  -- codex / gemini default to `none` via the fallback below.
 }
 
 --- @param backend string

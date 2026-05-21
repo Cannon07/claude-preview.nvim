@@ -83,10 +83,95 @@ local function opencode(raw)
   }
 end
 
+-- Copilot tools as of 2026-05-21: apply_patch, edit, str_replace, create,
+-- write, bash (plus view/glob/grep/ls/report_intent which the shim drops
+-- before invoking us). `str_replace` and `edit` carry the same {path,
+-- old_str, new_str} shape; both alias to Edit. `create` and `write` both
+-- alias to Write (file_text vs content).
+local COPILOT_TOOL_MAP = {
+  apply_patch = "ApplyPatch",
+  edit        = "Edit",
+  str_replace = "Edit",
+  create      = "Write",
+  write       = "Write",
+  bash        = "Bash",
+}
+
+-- Copilot delivers `toolArgs` as a JSON-encoded string in preToolUse and as
+-- an object in postToolUse. For apply_patch the string IS the raw patch text
+-- (not JSON). For every other tool the string contains a JSON object with
+-- snake_case keys (path, old_str, new_str, file_text, command, ...).
+local function copilot(raw)
+  local tool = (raw and raw.toolName) or ""
+  local cwd  = (raw and raw.cwd) or ""
+  local args = raw and raw.toolArgs
+
+  local canonical_tool = COPILOT_TOOL_MAP[tool]
+
+  local args_string, args_table
+  if type(args) == "string" then
+    args_string = args
+    if canonical_tool ~= "ApplyPatch" then
+      local ok, decoded = pcall(vim.json.decode, args)
+      if ok and type(decoded) == "table" then args_table = decoded end
+    end
+  elseif type(args) == "table" then
+    args_table = args
+    if canonical_tool == "ApplyPatch" then
+      -- Unusual but possible in postToolUse: mirror the bash adapter which
+      -- stringified the object via tojson so downstream parsing is uniform.
+      args_string = vim.json.encode(args)
+    end
+  end
+  args_table = args_table or {}
+
+  -- Defensive: the old bash shim explicitly skipped Edit/Write with an empty
+  -- file path and Bash with an empty command. Carry that contract forward —
+  -- otherwise a `{path: ""}` payload reaches diff.show_diff with file_path=""
+  -- and opens a broken diff tab. Drop the tool_name so the dispatcher no-ops.
+  local function blank(s) return s == nil or s == "" end
+
+  local tool_input = {}
+  if canonical_tool == "ApplyPatch" then
+    if blank(args_string) then
+      return { tool_name = nil, cwd = cwd, tool_input = {} }
+    end
+    tool_input.patch_text = args_string
+  elseif canonical_tool == "Bash" then
+    if blank(args_table.command) then
+      return { tool_name = nil, cwd = cwd, tool_input = {} }
+    end
+    tool_input.command = args_table.command
+  elseif canonical_tool == "Edit" then
+    local fp = resolve_path(args_table.path, cwd)
+    if blank(fp) then
+      return { tool_name = nil, cwd = cwd, tool_input = {} }
+    end
+    tool_input.file_path   = fp
+    tool_input.old_string  = args_table.old_str or ""
+    tool_input.new_string  = args_table.new_str or ""
+    tool_input.replace_all = false
+  elseif canonical_tool == "Write" then
+    local fp = resolve_path(args_table.path, cwd)
+    if blank(fp) then
+      return { tool_name = nil, cwd = cwd, tool_input = {} }
+    end
+    tool_input.file_path = fp
+    tool_input.content   = args_table.file_text or args_table.content or ""
+  end
+
+  return {
+    tool_name  = canonical_tool,
+    cwd        = cwd,
+    tool_input = tool_input,
+  }
+end
+
 M.normalisers = {
   claudecode = identity,
   opencode   = opencode,
-  -- codex / copilot / gemini will land their own normalisers as they flip.
+  copilot    = copilot,
+  -- codex / gemini will land their own normalisers as they flip.
 }
 
 --- @param raw table  decoded hook payload
