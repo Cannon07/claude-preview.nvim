@@ -101,6 +101,12 @@ local COPILOT_TOOL_MAP = {
 -- an object in postToolUse. For apply_patch the string IS the raw patch text
 -- (not JSON). For every other tool the string contains a JSON object with
 -- snake_case keys (path, old_str, new_str, file_text, command, ...).
+--
+-- Note: file paths are run through the shared `resolve_path`, which collapses
+-- ../ and ./ segments via vim.fs.normalize. The old bash copilot shim did
+-- not — paths were preserved verbatim. The change is deliberate and matches
+-- opencode's contract: internal keys (active_diffs, changes registry) must
+-- be canonical so logically-same files compare equal across backends.
 local function copilot(raw)
   local tool = (raw and raw.toolName) or ""
   local cwd  = (raw and raw.cwd) or ""

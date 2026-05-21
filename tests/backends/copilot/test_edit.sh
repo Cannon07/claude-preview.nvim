@@ -6,8 +6,9 @@
 # then verifies Neovim state via RPC.
 #
 # Copilot quirk: toolArgs is a stringified JSON object for most tools, and the
-# raw patch text for apply_patch. The adapter normalizes both to the shared
-# {tool_name, cwd, tool_input} format consumed by bin/core-pre-tool.sh.
+# raw patch text for apply_patch. The `copilot` entry of
+# lua/code-preview/pre_tool/normalisers.lua maps both into the canonical
+# {tool_name, cwd, tool_input} shape consumed by pre_tool.handle().
 
 COPILOT_PRE="$REPO_ROOT/backends/copilot/code-preview-diff.sh"
 COPILOT_POST="$REPO_ROOT/backends/copilot/code-close-diff.sh"

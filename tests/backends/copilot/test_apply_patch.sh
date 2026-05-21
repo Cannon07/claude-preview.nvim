@@ -3,15 +3,16 @@
 #
 # Drives the full pipeline for GPT-style apply_patch tool calls:
 #   raw patch text as toolArgs → backends/copilot/code-preview-diff.sh
-#     → bin/core-pre-tool.sh → bin/apply-patch.lua
+#     → nvim_call → lua/code-preview/pre_tool/init.lua
+#     → lua/code-preview/apply/patch.lua
 #     → Neovim diff previews for all files in the patch
 # And the mirror post path:
 #   → backends/copilot/code-close-diff.sh
-#     → bin/core-post-tool.sh
+#     → nvim_call → lua/code-preview/post_tool.lua
 #     → close_for_file for every Update/Add/Delete directive.
 #
 # Distinct from tests/backends/opencode/test_apply_patch.sh, which exercises
-# only bin/apply-patch.lua in isolation (parser-level).
+# the patch parser in isolation.
 
 COPILOT_PRE="$REPO_ROOT/backends/copilot/code-preview-diff.sh"
 COPILOT_POST="$REPO_ROOT/backends/copilot/code-close-diff.sh"
@@ -169,7 +170,8 @@ tail")"
   assert_eq "true" "$(nvim_eval "require('code-preview.diff').is_open()")" \
     "diff should be open during mixed patch" || return 1
 
-  # Post-hook must close ALL four — the regression fixed in bin/core-post-tool.sh.
+  # Post-hook must close ALL four — regression guard for the patch-paths loop
+  # in lua/code-preview/post_tool.lua (one close_for_file per patched file).
   run_copilot_post_patch "$patch"
   sleep 0.6
 
