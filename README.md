@@ -250,8 +250,6 @@ require("code-preview").setup({
 | `:CodePreviewToggleVisibleOnly` | Toggle visible_only — show diffs only for open buffers |
 | `:checkhealth code-preview` | Full health check (all backends) |
 
-> **Migrating?** The old `:ClaudePreview*` commands still work but show a deprecation warning. They will be removed in a future release.
-
 ## Keymaps
 
 | Key | Scope | Description |
@@ -466,7 +464,7 @@ vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter", "CursorHold" }, {
 **Migrating from older versions**
 - Update `require("claude-preview")` to `require("code-preview")` in your Neovim config
 - Re-run `:CodePreviewInstallClaudeCodeHooks` to update hook paths
-- The old `:ClaudePreview*` commands still work but show deprecation warnings
+- The old `:ClaudePreview*` commands have been removed — use the `:CodePreview*` equivalents
 
 ---
 

@@ -66,6 +66,15 @@ function M.install()
   vim.notify("[code-preview] Copilot CLI hooks installed → " .. path, vim.log.levels.INFO)
 end
 
+--- Report whether the Copilot CLI hooks config was produced by our installer.
+--- @return { state: "installed"|"missing", warnings: string[]? }
+function M.install_state()
+  if M.is_our_config(config_path()) then
+    return { state = "installed" }
+  end
+  return { state = "missing" }
+end
+
 function M.uninstall()
   local path = config_path()
   if vim.fn.filereadable(path) == 0 then

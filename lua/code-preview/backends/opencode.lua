@@ -67,6 +67,15 @@ function M.install()
   vim.notify("[code-preview] OpenCode plugin installed → " .. target, vim.log.levels.INFO)
 end
 
+--- Report whether the OpenCode plugin has been copied into the project.
+--- @return { state: "installed"|"missing", warnings: string[]? }
+function M.install_state()
+  if vim.fn.filereadable(opencode_target_dir() .. "/index.ts") == 1 then
+    return { state = "installed" }
+  end
+  return { state = "missing" }
+end
+
 function M.uninstall()
   local target = opencode_target_dir()
 

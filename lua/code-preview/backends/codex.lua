@@ -221,6 +221,26 @@ end
 -- without duplicating the parser.
 function M.feature_flag_state() return feature_flag_state() end
 
+--- Report Codex install state. Hooks-wired-up is the primary signal; a
+--- missing/disabled `codex_hooks` feature flag becomes a warning (Codex
+--- ignores hooks.json without it, so the install is degraded but present).
+--- @return { state: "installed"|"missing", warnings: string[]? }
+function M.install_state()
+  if not M.is_installed() then return { state = "missing" } end
+  local flag = feature_flag_state()
+  if flag == "enabled" then return { state = "installed" } end
+  if flag == "disabled" then
+    return {
+      state = "installed",
+      warnings = { "codex_hooks flag missing in .codex/config.toml" },
+    }
+  end
+  return {
+    state = "installed",
+    warnings = { ".codex/config.toml not found (need codex_hooks=true)" },
+  }
+end
+
 -- True iff `path`'s hooks.json contains an entry referencing our adapter
 -- script. Used by status display to detect installation without relying on
 -- file existence alone.

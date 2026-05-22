@@ -74,17 +74,6 @@ local function deep_merge(base, override)
   return result
 end
 
--- Helper: create a deprecated alias that warns and delegates
-local function deprecated_alias(old_name, new_name)
-  vim.api.nvim_create_user_command(old_name, function()
-    vim.notify(
-      "[code-preview] :" .. old_name .. " is deprecated, use :" .. new_name,
-      vim.log.levels.WARN
-    )
-    vim.cmd(new_name)
-  end, { desc = "(deprecated) Use :" .. new_name .. " instead" })
-end
-
 function M.setup(user_config)
   M.config = deep_merge(default_config, user_config or {})
 
@@ -149,14 +138,6 @@ function M.setup(user_config)
       { title = "code-preview" }
     )
   end, { desc = "Toggle visible_only — show diffs only for open buffers vs all files" })
-
-  -- ── Deprecated aliases (remove after one release cycle) ───────
-
-  deprecated_alias("ClaudePreviewInstallHooks", "CodePreviewInstallClaudeCodeHooks")
-  deprecated_alias("ClaudePreviewUninstallHooks", "CodePreviewUninstallClaudeCodeHooks")
-  deprecated_alias("ClaudePreviewCloseDiff", "CodePreviewCloseDiff")
-  deprecated_alias("ClaudePreviewStatus", "CodePreviewStatus")
-  deprecated_alias("ClaudePreviewToggleVisibleOnly", "CodePreviewToggleVisibleOnly")
 
   -- Neo-tree integration (soft dependency)
   if M.config.neo_tree.enabled then
@@ -250,60 +231,30 @@ function M.status()
   local diff = require("code-preview.diff")
   table.insert(lines, "Diff tab      : " .. (diff.is_open() and "open" or "closed"))
 
-  -- Backends
+  -- Backends — each module exposes install_state() returning
+  -- { state = "installed"|"missing", warnings = {...}? }. Rendering lives
+  -- here; per-backend detection logic lives in the backend module.
   table.insert(lines, "")
   table.insert(lines, "Backends:")
 
-  -- Claude Code
-  local claude_ok = false
-  local settings_path = vim.fn.getcwd() .. "/.claude/settings.local.json"
-  local f = io.open(settings_path, "r")
-  if f then
-    local content = f:read("*a")
-    f:close()
-    claude_ok = content:find("code-preview", 1, true) ~= nil
-                or content:find("claude-preview", 1, true) ~= nil
-  end
-  if claude_ok then
-    table.insert(lines, "  Claude Code : installed")
-  else
-    table.insert(lines, "  Claude Code : not installed  ->  :CodePreviewInstallClaudeCodeHooks")
-  end
+  local BACKENDS = {
+    { name = "claudecode", label = "Claude Code", install_cmd = ":CodePreviewInstallClaudeCodeHooks" },
+    { name = "opencode",   label = "OpenCode   ", install_cmd = ":CodePreviewInstallOpenCodeHooks"   },
+    { name = "copilot",    label = "Copilot CLI", install_cmd = ":CodePreviewInstallCopilotCliHooks" },
+    { name = "codex",      label = "Codex CLI  ", install_cmd = ":CodePreviewInstallCodexCliHooks"   },
+  }
 
-  -- OpenCode
-  local opencode_ok = vim.fn.filereadable(vim.fn.getcwd() .. "/.opencode/plugins/index.ts") == 1
-  if opencode_ok then
-    table.insert(lines, "  OpenCode    : installed")
-  else
-    table.insert(lines, "  OpenCode    : not installed  ->  :CodePreviewInstallOpenCodeHooks")
-  end
-
-  -- Copilot CLI — check file contents, not just existence, so a user-authored
-  -- hook file that happens to share the name isn't reported as "installed".
-  local copilot_ok = require("code-preview.backends.copilot").is_our_config(
-    vim.fn.getcwd() .. "/.github/hooks/code-preview.json"
-  )
-  if copilot_ok then
-    table.insert(lines, "  Copilot CLI : installed")
-  else
-    table.insert(lines, "  Copilot CLI : not installed  ->  :CodePreviewInstallCopilotCliHooks")
-  end
-
-  -- Codex CLI — installation requires both our hooks.json entries AND the
-  -- `codex_hooks = true` feature flag in config.toml; report both so users
-  -- can debug a "hooks aren't firing" state without guessing.
-  local codex = require("code-preview.backends.codex")
-  if codex.is_installed() then
-    local flag = codex.feature_flag_state()
-    if flag == "enabled" then
-      table.insert(lines, "  Codex CLI   : installed (codex_hooks=true)")
-    elseif flag == "disabled" then
-      table.insert(lines, "  Codex CLI   : installed BUT codex_hooks flag missing in .codex/config.toml")
+  for _, b in ipairs(BACKENDS) do
+    local s = require("code-preview.backends." .. b.name).install_state()
+    if s.state == "installed" then
+      if s.warnings and #s.warnings > 0 then
+        table.insert(lines, "  " .. b.label .. " : installed BUT " .. table.concat(s.warnings, "; "))
+      else
+        table.insert(lines, "  " .. b.label .. " : installed")
+      end
     else
-      table.insert(lines, "  Codex CLI   : installed BUT .codex/config.toml not found (need codex_hooks=true)")
+      table.insert(lines, "  " .. b.label .. " : not installed  ->  " .. b.install_cmd)
     end
-  else
-    table.insert(lines, "  Codex CLI   : not installed  ->  :CodePreviewInstallCodexCliHooks")
   end
 
   vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO, { title = "code-preview" })

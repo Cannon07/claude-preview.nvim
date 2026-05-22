@@ -99,6 +99,20 @@ function M.install()
   vim.notify("[code-preview] Hooks installed → " .. path, vim.log.levels.INFO)
 end
 
+--- Report whether the Claude Code hooks are wired up in this project.
+--- @return { state: "installed"|"missing", warnings: string[]? }
+function M.install_state()
+  local path = settings_path()
+  local f = io.open(path, "r")
+  if not f then return { state = "missing" } end
+  local content = f:read("*a") or ""
+  f:close()
+  local installed = content:find(HOOK_MARKER, 1, true) ~= nil
+                    or content:find(LEGACY_HOOK_MARKER, 1, true) ~= nil
+  if installed then return { state = "installed" } end
+  return { state = "missing" }
+end
+
 function M.uninstall()
   local path = settings_path()
   local data = read_settings(path)
