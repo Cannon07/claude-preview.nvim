@@ -1,14 +1,13 @@
 -- post_tool.lua — In-process orchestration for PostToolUse hooks.
 --
--- Replaces bin/core-post-tool.sh (which remains alive for not-yet-flipped
--- backends). The hook-entry shim passes the raw decoded hook JSON plus the
+-- The per-backend hook-entry shim passes the raw decoded hook JSON plus the
 -- backend name; handle() clears the relevant changes, closes the matching
--- preview(s), and refreshes neo-tree.
+-- preview(s), and refreshes neo-tree. See docs/adr/0005-core-handler-runs-in-process.md.
 --
 -- Tempfile cleanup is delegated to the OS (/tmp eviction); we do not rm the
--- per-proposal tempfiles here. The bash version did, but it was best-effort
--- and survived restarts via wildcard sweep — relying on /tmp hygiene is
--- equally fine and removes a class of "did I race the next hook?" bugs.
+-- per-proposal tempfiles here. The historical bash post-tool did, via a global
+-- wildcard sweep — relying on /tmp hygiene is equally fine and removes a class
+-- of "did I race the next hook?" bugs.
 
 local M = {}
 

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # code-preview-diff.sh — PreToolUse hook entry for Claude Code.
 #
-# After issue #47 phase 3, this shim does almost nothing: it discovers the
-# running Neovim's socket and makes a single RPC call into the in-process
-# orchestrator (lua/code-preview/pre_tool/init.lua), then prints whatever the
-# orchestrator returns. The 600 lines of bash that used to live in
-# core-pre-tool.sh are gone.
+# This shim does almost nothing: it discovers the running Neovim's socket
+# and makes a single RPC call into the in-process orchestrator
+# (lua/code-preview/pre_tool/init.lua), then prints whatever the orchestrator
+# returns. The 600 lines of bash that used to handle this out-of-process are
+# gone (see ADR-0005).
 #
 # When Neovim is unreachable, the shim abstains: exit 0 with no stdout.
 # Claude Code falls back to its native permission flow as if the plugin

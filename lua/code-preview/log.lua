@@ -72,10 +72,10 @@ end
 --- nvim's servername, and its cwd. Backends use the latter two when
 --- they want to log which nvim instance the diff is being routed to.
 ---
---- Consumers (all in bin/ and backends/): core-pre-tool.sh, core-post-tool.sh
---- use debug + log_file. copilot/code-preview-diff.sh additionally reads
---- servername + cwd. Renaming any field is a breaking change for those
---- scripts — grep for "log state" before touching this shape.
+--- Consumers (all in backends/): the per-backend code-preview-diff.sh /
+--- code-close-diff.sh shims read debug + log_file. copilot/code-preview-diff.sh
+--- additionally reads servername + cwd. Renaming any field is a breaking change
+--- for those scripts — grep for "log state" before touching this shape.
 --- @return { debug: boolean, log_file: string, servername: string, cwd: string }
 function M.state()
   return {

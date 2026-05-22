@@ -94,9 +94,9 @@ function M.setup(user_config)
   -- Self-register socket + cwd for hook-script discovery
   require("code-preview.pidfile").setup()
 
-  -- Clear any leftover /tmp/claude-diff-* tempfiles from prior sessions
-  -- (the in-process pre-tool flow has no global wildcard equivalent of the
-  -- old bash post-tool sweep — see pre_tool.sweep_leftover_tempfiles).
+  -- Clear any leftover /tmp/code-preview-diff-* tempfiles from prior sessions
+  -- (also matches the legacy /tmp/claude-diff-* prefix transitionally — see
+  -- pre_tool.sweep_leftover_tempfiles).
   require("code-preview.pre_tool").sweep_leftover_tempfiles()
 
   -- ── New commands ──────────────────────────────────────────────

@@ -75,7 +75,7 @@ Job: take the agent's native hook payload, normalise it into the shape the [core
 
 ## Core handler
 
-The agent-neutral pipeline that, given a normalised proposal, decides whether to show a preview, computes the original and proposed file content, and makes the [RPC](#rpc) call into the running Neovim. Today: `bin/core-pre-tool.sh` and `bin/core-post-tool.sh`. Issue #47 phases 3 and 4 fold the core handler into in-process Lua (`lua/code-preview/pre_tool.lua` / `post_tool.lua`), invoked through a single RPC call from the per-agent [hook entry](#hook-entry); the orchestration role stays the same but no longer runs in a separate process. See [ADR-0005](docs/adr/0005-core-handler-runs-in-process.md).
+The agent-neutral pipeline that, given a normalised proposal, decides whether to show a preview, computes the original and proposed file content, and makes the [RPC](#rpc) call into the running Neovim. Lives in-process at `lua/code-preview/pre_tool/init.lua` and `lua/code-preview/post_tool.lua`, invoked through a single RPC call from the per-agent [hook entry](#hook-entry). The historical out-of-process bash implementation (`bin/core-pre-tool.sh`, `bin/core-post-tool.sh`) was removed when issue #47 phase 3 finished for all backends; see [ADR-0005](docs/adr/0005-core-handler-runs-in-process.md) for the canonical history.
 
 The core handler is where shell-write detection, `visible_only` gating, and `permissionDecision` emission live — everything that doesn't depend on which agent fired the hook.
 

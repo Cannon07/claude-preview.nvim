@@ -357,8 +357,8 @@ function M.refresh()
   end)
 end
 
---- Schedule a M.refresh() call after `ms` milliseconds. Used by
---- core-post-tool.sh to give the file system a moment to settle after
+--- Schedule a M.refresh() call after `ms` milliseconds. Used by the
+--- post-tool handler to give the file system a moment to settle after
 --- Bash tool changes before redrawing the tree.
 function M.refresh_deferred(ms)
   vim.defer_fn(function() pcall(M.refresh) end, ms or 200)

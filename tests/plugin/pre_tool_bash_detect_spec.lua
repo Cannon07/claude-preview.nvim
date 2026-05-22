@@ -1,8 +1,8 @@
 -- pre_tool_bash_detect_spec.lua — Tier 1 shell-write + rm detection.
 --
 -- Table-driven. Each row pins a documented edge case from the historical
--- bin/core-pre-tool.sh detection logic. New rows go at the bottom with a
--- short comment explaining the case. Resist "obvious simplifications" to
+-- bash pre-tool detection logic. New rows go at the bottom with a short
+-- comment explaining the case. Resist "obvious simplifications" to
 -- bash_detect.lua without first reading these rows.
 
 local bash_detect = require("code-preview.pre_tool.bash_detect")

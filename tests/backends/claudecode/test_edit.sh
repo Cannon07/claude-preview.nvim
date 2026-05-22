@@ -54,7 +54,7 @@ EOF
 
   # Proposed temp file should contain the edit result (PID-suffixed)
   local proposed
-  proposed="$(ls -1t "${TMPDIR:-/tmp}"/claude-diff-proposed-* 2>/dev/null | head -1)"
+  proposed="$(ls -1t "${TMPDIR:-/tmp}"/code-preview-diff-proposed-* 2>/dev/null | head -1)"
   assert_file_exists "$proposed" "proposed temp file should exist" || return 1
   local proposed_content
   proposed_content="$(cat "$proposed")"
@@ -263,7 +263,7 @@ EOF
   sleep 0.5
 
   local proposed
-  proposed="$(ls -1t "${TMPDIR:-/tmp}"/claude-diff-proposed-* 2>/dev/null | head -1)"
+  proposed="$(ls -1t "${TMPDIR:-/tmp}"/code-preview-diff-proposed-* 2>/dev/null | head -1)"
   assert_file_exists "$proposed" "proposed temp file should exist" || return 1
   local proposed_content
   proposed_content="$(cat "$proposed")"

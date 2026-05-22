@@ -1,10 +1,9 @@
 -- pre_tool/init.lua — In-process orchestration for PreToolUse hooks.
 --
--- Replaces bin/core-pre-tool.sh (which remains alive for not-yet-flipped
--- backends until issue #47 phase 3 finishes for all of them). The per-OS
--- hook-entry shim passes the raw decoded hook JSON plus the backend name;
--- handle() does normalisation, tool dispatch, side effects (changes registry,
--- neo-tree refresh, diff.show_diff), and returns the per-backend stdout bytes.
+-- The per-backend hook-entry shim passes the raw decoded hook JSON plus the
+-- backend name; handle() does normalisation, tool dispatch, side effects
+-- (changes registry, neo-tree refresh, diff.show_diff), and returns the
+-- per-backend stdout bytes.
 --
 -- See docs/adr/0005-core-handler-runs-in-process.md.
 
@@ -24,8 +23,9 @@ local diff     = require("code-preview.diff")
 local log      = require("code-preview.log")
 
 -- ── Tempfile helpers ─────────────────────────────────────────────
--- Bash used $$ to namespace /tmp/claude-diff-*. In-process Lua uses hrtime +
--- a monotonic counter so multiple proposals in the same Neovim never collide.
+-- The historical bash flow used $$ to namespace /tmp/claude-diff-* tempfiles.
+-- In-process Lua uses hrtime + a monotonic counter so multiple proposals in
+-- the same Neovim never collide. Tempfile prefix is now code-preview-* (see #60).
 
 local _counter = 0
 local function next_id()
@@ -39,13 +39,14 @@ end
 
 -- One-time startup sweep of leftover proposal tempfiles.
 --
--- The bash post-tool ran `rm -f /tmp/claude-diff-original* /tmp/claude-diff-proposed*
--- /tmp/claude-patch-*` after every PostToolUse hook — a global wildcard sweep.
--- The new in-process flow doesn't have a natural hook to run that on every
--- post-tool (and per-proposal tracking is a follow-up — see the parity-port
--- hygiene issue). To prevent unbounded accumulation across long sessions
--- where Neovim doesn't restart, run the sweep once at setup(). macOS doesn't
--- auto-evict /tmp under a few days, so this matters in practice.
+-- Per-proposal tempfile tracking is a follow-up (see issue #64). To prevent
+-- unbounded accumulation across long sessions where Neovim doesn't restart,
+-- run the sweep once at setup(). macOS doesn't auto-evict /tmp under a few
+-- days, so this matters in practice.
+--
+-- The old claude-* patterns are matched transitionally so leftover tempfiles
+-- from prior nvim sessions (pre-#60) still get cleaned up. Drop the old
+-- patterns in v1.2.
 function M.sweep_leftover_tempfiles()
   local dir = tmpdir()
   local fd = vim.loop.fs_scandir(dir)
@@ -53,7 +54,11 @@ function M.sweep_leftover_tempfiles()
   while true do
     local name = vim.loop.fs_scandir_next(fd)
     if not name then break end
-    if name:match("^claude%-diff%-original%-") or
+    if name:match("^code%-preview%-diff%-original%-") or
+       name:match("^code%-preview%-diff%-proposed%-") or
+       name:match("^code%-preview%-patch%-") or
+       -- transitional; drop in v1.2
+       name:match("^claude%-diff%-original%-") or
        name:match("^claude%-diff%-proposed%-") or
        name:match("^claude%-patch%-") then
       pcall(vim.loop.fs_unlink, dir .. "/" .. name)
@@ -107,8 +112,8 @@ end
 -- below is a one-liner around this helper.
 local function present_single_file(file_path, proposed_content, input, cfg)
   local id = next_id()
-  local orig = tmpdir() .. "/claude-diff-original-" .. id
-  local prop = tmpdir() .. "/claude-diff-proposed-" .. id
+  local orig = tmpdir() .. "/code-preview-diff-original-" .. id
+  local prop = tmpdir() .. "/code-preview-diff-proposed-" .. id
 
   copy_or_empty(file_path, orig)
   write_file(prop, proposed_content)
@@ -185,7 +190,7 @@ local function handle_apply_patch(input, cfg)
   end
 
   local id = next_id()
-  local outdir = tmpdir() .. "/claude-patch-out-" .. id
+  local outdir = tmpdir() .. "/code-preview-patch-out-" .. id
   vim.fn.mkdir(outdir, "p")
 
   local files = apply_patch.parse(patch_text, input.cwd or "")

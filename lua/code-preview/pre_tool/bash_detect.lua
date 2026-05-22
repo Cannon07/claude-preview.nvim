@@ -3,9 +3,9 @@
 -- Inputs: a Bash command string and the project cwd.
 -- Output: a structured table { rm_paths = {...}, write_paths = {...} }.
 --
--- This is a port of the regex-based detection that lived inline in
--- bin/core-pre-tool.sh. The edge cases here all come from real bugs; resist
--- "obvious simplifications" without first reading bash_detect_spec.lua.
+-- The edge cases here all come from real bugs in the historical bash
+-- pre-tool detection logic; resist "obvious simplifications" without first
+-- reading bash_detect_spec.lua.
 
 local M = {}
 
