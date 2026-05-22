@@ -7,7 +7,8 @@
 #
 # Codex specifics:
 #   - apply_patch carries the patch text in tool_input.command (not patch_text).
-#     The adapter rewrites that field; covered in test_apply_patch.sh.
+#     The codex normaliser in lua/code-preview/pre_tool/normalisers.lua
+#     rewrites that field; covered in test_apply_patch.sh.
 #   - Today's models route ALL file edits through apply_patch. Edit/Write/
 #     MultiEdit are passed through defensively for forward compat.
 #   - Bash detection: rm marks deleted; output redirection (Tier 1 shell

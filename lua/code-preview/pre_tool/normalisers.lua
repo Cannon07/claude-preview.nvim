@@ -180,8 +180,19 @@ end
 -- passthrough — codex models route all edits through apply_patch today,
 -- but the Edit/Write/Bash branches exist defensively in case a future
 -- codex version (or an MCP server) emits those names with Claude-Code-
--- style field shapes. resolve_path is applied for parity with the other
--- backends so internal keys compare equal across agents.
+-- style field shapes.
+--
+-- Note: file paths are run through the shared `resolve_path`, which collapses
+-- ../ and ./ segments via vim.fs.normalize. The old bash codex shim did not —
+-- paths were preserved verbatim. The change is deliberate and matches the
+-- opencode/copilot contract: internal keys (active_diffs, changes registry)
+-- must be canonical so logically-same files compare equal across backends.
+--
+-- The canonical-ApplyPatch branch (uppercase) below also fixes a dormant
+-- bug in the old shim: its `ApplyPatch|Edit|Write` case blank-checked
+-- tool_input.file_path, which canonical ApplyPatch doesn't carry, so any
+-- such payload would have been silently dropped. Nothing emits canonical
+-- ApplyPatch today, but the new branch checks patch_text correctly.
 local function codex(raw)
   local tool = (raw and raw.tool_name) or ""
   local cwd  = (raw and raw.cwd) or ""

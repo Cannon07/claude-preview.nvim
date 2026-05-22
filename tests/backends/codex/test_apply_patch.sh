@@ -2,8 +2,9 @@
 # test_apply_patch.sh — E2E tests for Codex CLI apply_patch workflow
 #
 # Codex carries the `*** Begin Patch … *** End Patch` payload in
-# tool_input.command (not tool_input.patch_text). The adapter rewrites the
-# field name and forwards to bin/core-pre-tool.sh, which uses the same
+# tool_input.command (not tool_input.patch_text). After #47 phase 3 the
+# rename happens in lua/code-preview/pre_tool/normalisers.lua (codex entry);
+# the shim now just RPCs into pre_tool.handle, which uses the same
 # apply-patch.lua parser the other backends share.
 
 CODEX_PRE="$REPO_ROOT/backends/codex/code-preview-diff.sh"
