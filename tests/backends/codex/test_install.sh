@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # test_install.sh — OpenAI Codex CLI hook install/uninstall tests
 #
-# Codex reads hooks from .codex/hooks.json and requires `codex_hooks = true`
-# under [features] in .codex/config.toml. Our installer writes hooks.json
-# (merging with any existing entries) and warns if the feature flag is
-# missing — it does NOT edit config.toml. These tests pin that contract.
+# Codex reads hooks from .codex/hooks.json. Modern Codex enables hooks by
+# default; only an explicit `[features] hooks = false` (or the legacy
+# `codex_hooks = false`) silences them. Our installer writes hooks.json
+# (merging with any existing entries) and warns only on explicit opt-out —
+# it does NOT edit config.toml. These tests pin that contract.
 
 # ── Setup ────────────────────────────────────────────────────────
 
@@ -136,76 +137,108 @@ EOF
   assert_not_contains "$content" "code-close-diff.sh"    "our post-hook must be removed"         || return 1
 }
 
-# ── Test: feature_flag_state reports the three modes ────────────
+# ── Test: feature_flag_state reflects default-enabled semantics ──
 
 # Drives the helper that :CodePreviewStatus and :checkhealth use to surface
-# the codex_hooks feature flag. The flag is the silent failure mode for
-# Codex hooks, so the detector must not produce false positives or negatives.
+# the Codex hooks feature flag. Modern Codex enables hooks by default — the
+# only "off" state is an explicit 'hooks = false' (or legacy
+# `codex_hooks = false`) under [features].
 test_feature_flag_state() {
   rm -rf "$TEST_PROJECT_DIR/.codex"
   rm -f  "$GLOBAL_CONFIG_FILE"
 
-  # Both project-local and global absent.
-  local missing
-  missing="$(nvim_eval "require('code-preview.backends.codex').feature_flag_state()")"
-  assert_eq "missing" "$missing" "no config files should report 'missing'" || return 1
+  # Both project-local and global absent → default (enabled).
+  local default_state
+  default_state="$(nvim_eval "require('code-preview.backends.codex').feature_flag_state()")"
+  assert_eq "enabled" "$default_state" "no config files should default to 'enabled'" || return 1
 
-  # Project-local exists without the flag, global still absent → disabled.
+  # Project-local exists without any hooks setting → still default (enabled).
   mkdir -p "$TEST_PROJECT_DIR/.codex"
   cat > "$CONFIG_FILE" <<'EOF'
 approval_policy = "on-request"
 EOF
-  local disabled
-  disabled="$(nvim_eval "require('code-preview.backends.codex').feature_flag_state()")"
-  assert_eq "disabled" "$disabled" "config.toml without flag should report 'disabled'" || return 1
+  local no_opinion
+  no_opinion="$(nvim_eval "require('code-preview.backends.codex').feature_flag_state()")"
+  assert_eq "enabled" "$no_opinion" "config.toml without a hooks line should stay 'enabled' (default)" || return 1
 
-  # Project-local has the flag → enabled.
+  # Project-local explicitly enables via the canonical `hooks` key.
   cat > "$CONFIG_FILE" <<'EOF'
-approval_policy = "on-request"
+[features]
+hooks = true
+EOF
+  local explicit_on
+  explicit_on="$(nvim_eval "require('code-preview.backends.codex').feature_flag_state()")"
+  assert_eq "enabled" "$explicit_on" "explicit 'hooks = true' should be 'enabled'" || return 1
 
+  # Legacy alias `codex_hooks = true` must still parse as enabled.
+  cat > "$CONFIG_FILE" <<'EOF'
 [features]
 codex_hooks = true
 EOF
-  local enabled
-  enabled="$(nvim_eval "require('code-preview.backends.codex').feature_flag_state()")"
-  assert_eq "enabled" "$enabled" "config.toml with flag should report 'enabled'" || return 1
+  local legacy_on
+  legacy_on="$(nvim_eval "require('code-preview.backends.codex').feature_flag_state()")"
+  assert_eq "enabled" "$legacy_on" "legacy 'codex_hooks = true' should be 'enabled'" || return 1
+
+  # Explicit opt-out via canonical key → disabled.
+  cat > "$CONFIG_FILE" <<'EOF'
+[features]
+hooks = false
+EOF
+  local explicit_off
+  explicit_off="$(nvim_eval "require('code-preview.backends.codex').feature_flag_state()")"
+  assert_eq "disabled" "$explicit_off" "explicit 'hooks = false' should be 'disabled'" || return 1
+
+  # Explicit opt-out via legacy alias.
+  cat > "$CONFIG_FILE" <<'EOF'
+[features]
+codex_hooks = false
+EOF
+  local legacy_off
+  legacy_off="$(nvim_eval "require('code-preview.backends.codex').feature_flag_state()")"
+  assert_eq "disabled" "$legacy_off" "legacy 'codex_hooks = false' should be 'disabled'" || return 1
 }
 
-# ── Test: feature_flag_state honors the global config.toml ──────
+# ── Test: project-local precedence over global config ───────────
 
 # Codex reads ~/.codex/config.toml (global) in addition to .codex/config.toml
-# (project-local). A user with the flag set globally should NOT see a
-# misleading "disabled/missing" warning. Mirrors the docs we link in README.
+# (project-local). Project-local should override the global setting — a user
+# who turned hooks off globally but back on for this project shouldn't see a
+# false warning, and vice versa.
 test_feature_flag_state_global() {
   rm -rf "$TEST_PROJECT_DIR/.codex"
   rm -f  "$GLOBAL_CONFIG_FILE"
 
-  # Only the global file has the flag — project-local is absent.
+  # Global disables, no project-local opinion → disabled propagates.
   cat > "$GLOBAL_CONFIG_FILE" <<'EOF'
 [features]
-codex_hooks = true
+hooks = false
 EOF
-  local enabled
-  enabled="$(nvim_eval "require('code-preview.backends.codex').feature_flag_state()")"
-  assert_eq "enabled" "$enabled" "global config with flag should report 'enabled'" || return 1
+  local global_off
+  global_off="$(nvim_eval "require('code-preview.backends.codex').feature_flag_state()")"
+  assert_eq "disabled" "$global_off" "global 'hooks = false' should propagate" || return 1
 
-  # Project-local without the flag must NOT downgrade an enabled global.
+  # Project-local re-enables — must win over the global off.
   mkdir -p "$TEST_PROJECT_DIR/.codex"
   cat > "$CONFIG_FILE" <<'EOF'
-approval_policy = "on-request"
+[features]
+hooks = true
 EOF
-  local still_enabled
-  still_enabled="$(nvim_eval "require('code-preview.backends.codex').feature_flag_state()")"
-  assert_eq "enabled" "$still_enabled" "global flag should win over local-without-flag" || return 1
+  local local_wins_on
+  local_wins_on="$(nvim_eval "require('code-preview.backends.codex').feature_flag_state()")"
+  assert_eq "enabled" "$local_wins_on" "project-local 'hooks = true' should override global off" || return 1
 
-  # Both files present, neither enables → disabled (not missing).
-  rm -f "$GLOBAL_CONFIG_FILE"
+  # Inverse: global enabled, project-local explicitly disables.
   cat > "$GLOBAL_CONFIG_FILE" <<'EOF'
-# nothing useful here
+[features]
+hooks = true
 EOF
-  local disabled
-  disabled="$(nvim_eval "require('code-preview.backends.codex').feature_flag_state()")"
-  assert_eq "disabled" "$disabled" "two configs, neither enabling, should be 'disabled'" || return 1
+  cat > "$CONFIG_FILE" <<'EOF'
+[features]
+hooks = false
+EOF
+  local local_wins_off
+  local_wins_off="$(nvim_eval "require('code-preview.backends.codex').feature_flag_state()")"
+  assert_eq "disabled" "$local_wins_off" "project-local 'hooks = false' should override global on" || return 1
 }
 
 # ── Test: install refuses to overwrite a corrupted hooks.json ───

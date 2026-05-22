@@ -143,19 +143,16 @@ require("code-preview").setup()
 1. Install the plugin and call `setup()`
 2. Open a project in Neovim
 3. Run `:CodePreviewInstallCodexCliHooks` — writes `.codex/hooks.json`
-4. Codex requires a feature flag to enable hooks, and the diff-preview workflow only makes sense when Codex asks before applying edits. Create or edit `.codex/config.toml` (project-local) or `~/.codex/config.toml` (global) and add:
+4. The diff-preview workflow only makes sense when Codex asks before applying edits. Create or edit `.codex/config.toml` (project-local) or `~/.codex/config.toml` (global) and add:
 
    ```toml
    approval_policy = "on-request"
    sandbox_mode    = "read-only"
-
-   [features]
-   codex_hooks = true
    ```
 
    `approval_policy = "on-request"` and `sandbox_mode = "read-only"` ensure Codex prompts you before every edit, so the diff preview has time to open and you have time to review. Without them, Codex may apply changes without prompting and the preview window will never block on your decision.
 
-   The installer warns you if `codex_hooks` is missing. You can re-check at any time with `:CodePreviewStatus` or `:checkhealth code-preview`, which both report whether the feature flag is detected.
+   > **Note on the hooks feature flag:** Modern Codex enables hooks by default — no `[features]` entry is required. If you previously disabled them with `[features] hooks = false` (or the legacy `codex_hooks = false`), remove that line. `:CodePreviewStatus` and `:checkhealth code-preview` will warn if hooks are explicitly disabled.
 5. Start Codex CLI in the project directory
 6. Ask Codex to edit a file — a diff opens automatically in Neovim
 7. Accept/reject in the CLI; the diff closes automatically on accept
@@ -187,7 +184,7 @@ AI Agent (terminal)                              Neovim
 
 **GitHub Copilot CLI** uses shell-based hooks (`preToolUse`/`postToolUse`) configured in `.github/hooks/code-preview.json`. The adapter translates Copilot's tool vocabulary (`apply_patch`, `edit`, `create`, `bash`) into the same normalized format used by the other backends.
 
-**OpenAI Codex CLI** uses shell-based hooks (`PreToolUse`/`PostToolUse`) configured in `.codex/hooks.json`, gated by `codex_hooks = true` under `[features]` in `.codex/config.toml`. The adapter passes `Bash` through and rewrites `apply_patch` (whose patch text lives in `tool_input.command`) into the canonical `ApplyPatch` shape with `tool_input.patch_text`.
+**OpenAI Codex CLI** uses shell-based hooks (`PreToolUse`/`PostToolUse`) configured in `.codex/hooks.json`. Hooks are enabled by default in modern Codex; the only way to silence them is `[features] hooks = false` (or the legacy `codex_hooks = false`) in `.codex/config.toml`. The adapter passes `Bash` through and rewrites `apply_patch` (whose patch text lives in `tool_input.command`) into the canonical `ApplyPatch` shape with `tool_input.patch_text`.
 
 All backends communicate with Neovim via RPC (`nvim --server <socket> --remote-send`).
 
@@ -448,8 +445,8 @@ vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter", "CursorHold" }, {
 
 **Codex CLI hooks not firing**
 - Run `:CodePreviewInstallCodexCliHooks` in the project root
-- Confirm `.codex/config.toml` contains `[features]` with `codex_hooks = true` (without it, Codex ignores `hooks.json` silently)
-- Update Codex if needed — older versions only fired hooks for `Bash`, not `apply_patch`
+- Confirm `.codex/config.toml` does **not** contain `[features] hooks = false` (or the legacy `codex_hooks = false`) — hooks are enabled by default in modern Codex; an explicit `false` is the only way to silence them
+- Update Codex if needed — older versions required `codex_hooks = true` explicitly and only fired hooks for `Bash`, not `apply_patch`
 - Run `:CodePreviewStatus` and `:checkhealth code-preview` to verify install state and the feature flag
 
 **Copilot CLI hooks not firing**

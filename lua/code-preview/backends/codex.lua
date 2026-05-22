@@ -83,25 +83,28 @@ local function remove_ours(list)
   return filtered
 end
 
--- Check both the project-local and global config.toml for the codex_hooks
--- feature flag. Returns "enabled" | "disabled" | "missing".
---   enabled  — at least one location has `codex_hooks = true`
---   disabled — at least one location exists, but none enable the flag
---   missing  — neither location exists
--- The global path mirrors what Codex itself reads, so a user who set the
--- flag in ~/.codex/config.toml shouldn't see a false warning here.
+-- Per-file probe for the Codex hooks feature flag. Returns one of:
+--   "enabled"  — file explicitly sets `hooks` (or legacy `codex_hooks`) to true
+--   "disabled" — file explicitly sets the same to false
+--   nil        — file is missing or expresses no opinion (use default)
+-- Modern Codex enables hooks by default and accepts either `hooks` (canonical)
+-- or `codex_hooks` (deprecated alias) under [features]. We match either.
 local function file_flag_state(path)
-  if vim.fn.filereadable(path) == 0 then return "missing" end
+  if vim.fn.filereadable(path) == 0 then return nil end
   local f = io.open(path, "r")
-  if not f then return "missing" end
+  if not f then return nil end
   local content = f:read("*a") or ""
   f:close()
-  -- Look for `codex_hooks = true` (loose match — handles whitespace & quotes
-  -- but not deeply parsed; users with exotic TOML are responsible for it).
-  if content:match("codex_hooks%s*=%s*true") then
+  -- Loose match — handles whitespace & quotes but not deeply parsed; users
+  -- with exotic TOML are responsible for it. Order matters only for the
+  -- explicit-false detection: we surface disabled iff no enabling line exists.
+  if content:match("hooks%s*=%s*true") or content:match("codex_hooks%s*=%s*true") then
     return "enabled"
   end
-  return "disabled"
+  if content:match("hooks%s*=%s*false") or content:match("codex_hooks%s*=%s*false") then
+    return "disabled"
+  end
+  return nil
 end
 
 local function global_config_path()
@@ -112,20 +115,16 @@ local function global_config_path()
   return vim.fn.expand("~/.codex/config.toml")
 end
 
+--- Resolve the effective state of Codex's `hooks` feature flag.
+--- Project-local config wins over the global config; in the absence of any
+--- explicit setting, Codex defaults to enabled, so we do too.
+--- @return "enabled"|"disabled"
 local function feature_flag_state()
-  local local_state  = file_flag_state(config_path())
+  local local_state = file_flag_state(config_path())
+  if local_state ~= nil then return local_state end
   local global_state = file_flag_state(global_config_path())
-  -- Enabled wins if either location turns it on.
-  if local_state == "enabled" or global_state == "enabled" then
-    return "enabled"
-  end
-  -- If at least one file exists but neither enables the flag, surface as
-  -- disabled (so we tell the user what to fix). Only report missing when
-  -- both files are absent.
-  if local_state == "missing" and global_state == "missing" then
-    return "missing"
-  end
-  return "disabled"
+  if global_state ~= nil then return global_state end
+  return "enabled"
 end
 
 local function ensure_executable(path)
@@ -173,20 +172,16 @@ function M.install()
   write_json(hooks_path(), data)
   vim.notify("[code-preview] Codex hooks installed → " .. hooks_path(), vim.log.levels.INFO)
 
-  -- Codex ignores hooks.json unless `codex_hooks = true` lives under
-  -- `[features]` in config.toml. We don't edit config.toml automatically
-  -- (TOML editing without a parser is risky); surface a clear nudge instead.
-  local state = feature_flag_state()
-  if state ~= "enabled" then
-    local msg
-    if state == "missing" then
-      msg = "[code-preview] Codex requires a feature flag to enable hooks. Create "
-          .. config_path() .. " with:\n\n  [features]\n  codex_hooks = true\n"
-    else
-      msg = "[code-preview] Codex requires `codex_hooks = true` under `[features]` in "
-          .. config_path() .. ". Add it manually before running Codex."
-    end
-    vim.notify(msg, vim.log.levels.WARN)
+  -- Modern Codex enables hooks by default — no config.toml entry needed. We
+  -- only nudge the user if they've *explicitly* opted out via `hooks = false`
+  -- (or the legacy `codex_hooks = false`) under `[features]`.
+  if feature_flag_state() == "disabled" then
+    vim.notify(
+      "[code-preview] Codex hooks are disabled in your config: `[features] hooks = false` (or `codex_hooks = false`) is set in "
+        .. config_path() .. " or " .. global_config_path()
+        .. ". Remove the line, or set `hooks = true`, before running Codex.",
+      vim.log.levels.WARN
+    )
   end
 end
 
@@ -221,24 +216,20 @@ end
 -- without duplicating the parser.
 function M.feature_flag_state() return feature_flag_state() end
 
---- Report Codex install state. Hooks-wired-up is the primary signal; a
---- missing/disabled `codex_hooks` feature flag becomes a warning (Codex
---- ignores hooks.json without it, so the install is degraded but present).
+--- Report Codex install state. Hooks-wired-up is the primary signal. Modern
+--- Codex enables hooks by default, so we only warn when the user has
+--- explicitly disabled them via `[features] hooks = false` (or the legacy
+--- `codex_hooks = false`) in config.toml.
 --- @return { state: "installed"|"missing", warnings: string[]? }
 function M.install_state()
   if not M.is_installed() then return { state = "missing" } end
-  local flag = feature_flag_state()
-  if flag == "enabled" then return { state = "installed" } end
-  if flag == "disabled" then
+  if feature_flag_state() == "disabled" then
     return {
       state = "installed",
-      warnings = { "codex_hooks flag missing in .codex/config.toml" },
+      warnings = { "hooks explicitly disabled in .codex/config.toml (`[features] hooks = false`)" },
     }
   end
-  return {
-    state = "installed",
-    warnings = { ".codex/config.toml not found (need codex_hooks=true)" },
-  }
+  return { state = "installed" }
 end
 
 -- True iff `path`'s hooks.json contains an entry referencing our adapter

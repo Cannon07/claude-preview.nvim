@@ -215,13 +215,13 @@ function M.check()
   local codex_backend = require("code-preview.backends.codex")
   if codex_backend.is_installed() then
     ok("Codex CLI hooks are installed (.codex/hooks.json)")
-    local flag = codex_backend.feature_flag_state()
-    if flag == "enabled" then
-      ok(".codex/config.toml has codex_hooks = true")
-    elseif flag == "disabled" then
-      warn(".codex/config.toml is missing `codex_hooks = true` under [features] — hooks will not fire")
+    -- Modern Codex enables hooks by default under [features]; the canonical
+    -- key is `hooks` (with `codex_hooks` accepted as a deprecated alias).
+    -- The only failure mode here is the user having explicitly opted out.
+    if codex_backend.feature_flag_state() == "disabled" then
+      warn("Codex hooks are explicitly disabled in config.toml (`[features] hooks = false`) — remove it or set `hooks = true`")
     else
-      warn(".codex/config.toml not found — create it with `[features]\\ncodex_hooks = true`")
+      ok("Codex hooks feature is enabled (default; no flag required)")
     end
   else
     warn("Codex CLI hooks not installed — run :CodePreviewInstallCodexCliHooks")
