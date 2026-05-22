@@ -120,7 +120,7 @@ Two levels of fidelity for handling `Bash` proposals.
 
 Three distinct path concepts used together in the [preview](#preview) pipeline. They are *not* interchangeable; the current code muddles them (see [issue #55](https://github.com/Cannon07/code-preview.nvim/issues/55)).
 
-- **Source path** — a temp file holding pre-rendered content (`/tmp/claude-diff-{original,proposed}-<pid>`). One pair per preview: `original_source_path` and `proposed_source_path`. Scratch files, not the real file.
+- **Source path** — a temp file holding pre-rendered content (`/tmp/code-preview-diff-{original,proposed}-<id>`). One pair per preview: `original_source_path` and `proposed_source_path`. Scratch files, not the real file.
 - **File path** — the absolute canonical path of the real file being edited. The *identity*: used as the key in `active_diffs`, passed to the [changes](#change) registry, used by neo-tree reveal.
 - **Display path** — what's rendered in the winbar. Usually cwd-relative for readability; never used as an identity.
 

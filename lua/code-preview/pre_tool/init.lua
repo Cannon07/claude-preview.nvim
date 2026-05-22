@@ -46,7 +46,8 @@ end
 --
 -- The old claude-* patterns are matched transitionally so leftover tempfiles
 -- from prior nvim sessions (pre-#60) still get cleaned up. Drop the old
--- patterns in v1.2.
+-- patterns one release after this bridge ships, once users on the prior
+-- version have had a chance to upgrade.
 function M.sweep_leftover_tempfiles()
   local dir = tmpdir()
   local fd = vim.loop.fs_scandir(dir)
