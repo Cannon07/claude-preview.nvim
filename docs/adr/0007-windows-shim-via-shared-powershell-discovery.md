@@ -1,0 +1,20 @@
+# Windows support uses a shared PowerShell shim; all agents (including OpenCode) reuse it
+
+Issue #46 adds Windows 11 support. Windows forces a second [socket discovery](../../CONTEXT.md#socket-discovery) implementation regardless of agent, because Windows nvim is addressed via a named pipe (`\\.\pipe\nvim.<pid>.0`) and none of the Unix discovery tooling (`lsof`, `compgen`, `kill -0`, the `/var/folders`/`/tmp`/`$XDG_RUNTIME_DIR` globs) exists. We implement that second discovery+RPC layer **once, in PowerShell**, and have all four agents — claudecode, codex, copilot, *and* opencode — share it via a per-OS [hook entry](../../CONTEXT.md#hook-entry): a `.sh` shim on Unix, a `.ps1` shim on Windows.
+
+PowerShell (Windows PowerShell 5.1, in-box on every Windows 11) is the single Windows logic language: it is the only stock tool that parses JSON natively (replacing the Unix shims' `jq`), enumerates named pipes, and probes the RPC socket. The installer writes the interpreter explicitly into each agent's `command` field (`powershell -NoProfile -ExecutionPolicy Bypass -File <path>.ps1`); a thin `.cmd` trampoline is added only for an agent whose `command` field turns out to raw-exec a bare path and reject a multi-token command.
+
+## Considered Options (OpenCode specifically)
+
+[ADR-0006](0006-opencode-defers-os-independence-to-46.md) deferred OpenCode's OS-independence to this issue, predicting OpenCode would be "among the first integrations to drop the bash dependency." This ADR **supersedes that prediction**: OpenCode does drop bash *on Windows*, but not by going shim-free — by switching to the shared PowerShell shim.
+
+- **A — OpenCode `execSync`s a per-OS shim** *(chosen)*. The TS plugin selects the `.sh` or `.ps1` shim by `process.platform`. Discovery logic lives only in the two per-OS shims, shared by all four agents. OpenCode adds zero new discovery code, and its Windows dependency improves from bash (not in-box) to PowerShell (in-box) — which is exactly the improvement ADR-0006's deferral was protecting.
+- **B — TS-native `nvim --server` path, no shim.** OpenCode's hook entry is already a real language running in-process, so it *could* do discovery + RPC directly in TS. Rejected: this makes discovery a *third* implementation (bash + PowerShell + TS) that must track every change to the other two — precisely the divergence ADR-0006 was written to prevent, now made worse by the existence of the PowerShell impl. The fact that OpenCode *can* speak nvim directly does not mean it should own a private discovery implementation.
+- **C — Full TS msgpack-rpc client.** Rejected in ADR-0006 (new runtime dependency, third protocol implementation); nothing in #46 changes that.
+
+## Consequences
+
+- The "one discovery implementation" principle becomes "one per **OS**" (bash + PowerShell), not one per agent. All four agents share both. This is the floor: Windows itself forces the second implementation, and we refuse to add a third.
+- The Windows shim **never deserializes-and-reserializes the agent payload**. It parses only the shallow fields it needs (`cwd` for discovery, the tool name for the fast-path filter) with `ConvertFrom-Json`, and splices the raw stdin JSON *verbatim* into the RPC args array — exactly as the Unix shims' `jq --argjson` does. This sidesteps `ConvertTo-Json`'s default depth-2 truncation, which would otherwise silently drop deep MultiEdit/ApplyPatch structures.
+- The tempfile path handed to the in-process [dispatcher](../../CONTEXT.md#dispatcher) is forward-slashed before being spliced into the `luaeval(...)` source string, because Windows backslashes are Lua escape sequences. The dispatcher (`rpc.lua`) itself is transport-agnostic and needs **no** changes — the payoff of the #47 phase-2/3 design.
+- Two PowerShell 5.1 behaviours are validated by a spike before the shim is finalised: per-agent `command`-field invocation semantics (shell vs raw-exec, arguments accepted?), and native-command argument quoting of the `--remote-expr` value (5.1 lacks `PSNativeCommandArgumentPassing`).

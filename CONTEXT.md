@@ -59,11 +59,15 @@ The act of finding which running Neovim instance to address an RPC call at. Reso
 
 If multiple instances match, prefer the one whose cwd matches (or is a parent of) the project cwd passed in by the calling hook.
 
+On **Windows** (issue #46) the addressable target is a named pipe (`\\.\pipe\nvim.<pid>.0`) rather than a Unix socket. The [pidfile](#pidfile) is the primary path; the Unix glob fallbacks (steps 3–5) are replaced by a single **pipe-enumeration fallback** — list `\\.\pipe\`, keep names matching `nvim.*`, probe each for responsiveness. Pipe enumeration cannot run the cwd tiebreak (Windows has no `/proc` or `lsof` to read a process's cwd, and a pipe found this way has no pidfile cwd line), so it degrades to "first responsive pipe," mirroring how the Unix glob path degrades when the cwd lookup fails. The stale-pipe responsiveness probe (`nvim --server <pipe> --remote-expr "1"`) is unchanged in shape; only the is-socket precheck is dropped (named pipes have no reliable existence test).
+
 ## Pidfile
 
 One file per running Neovim that has called `code-preview.setup()`. Path: `${XDG_STATE_HOME:-$HOME/.local/state}/code-preview/sockets/<pid>`. Contents: line 1 is the RPC socket path, line 2 is the Neovim's cwd.
 
 Pidfiles self-register on `setup()`, refresh on `DirChanged`, and are removed on `VimLeavePre`. Crashed Neovims leave stale pidfiles behind; `socket discovery` self-heals by probing each socket with `--remote-expr "1"` before using it.
+
+The pidfile *directory* is computed independently — and must agree byte-for-byte — on both the Lua writer (`pidfile.lua`) and the shim reader, so it can only use values both sides can derive without an RPC. On **Windows** (issue #46) that base is `%LOCALAPPDATA%\code-preview\sockets` (not the Unix `$XDG_STATE_HOME`/`$HOME` formula, which yields a driveless garbage path on Windows); line 1 of the file is the named-pipe path instead of a socket path.
 
 The pidfile is *one of several* socket discovery paths, not a synonym for socket discovery.
 
@@ -71,7 +75,7 @@ The pidfile is *one of several* socket discovery paths, not a synonym for socket
 
 The per-agent script the agent invokes directly when it's about to (or has just) used an editing tool. One pair per [integration](#integration): `code-preview-diff.sh` for pre-tool, `code-close-diff.sh` for post-tool. Lives in `backends/<agent>/`.
 
-Job: take the agent's native hook payload, normalise it into the shape the [core handler](#core-handler) expects (`{tool_name, cwd, tool_input}`), then hand off. Whatever language the agent demands (today: shell) is the language of the hook entry.
+Job: take the agent's native hook payload, normalise it into the shape the [core handler](#core-handler) expects (`{tool_name, cwd, tool_input}`), then hand off. The hook entry is **per-OS**: a `.sh` shim on Unix, a PowerShell `.ps1` shim on Windows (issue #46). PowerShell is the single Windows logic language across all agents — it is the only stock-Windows-11 tool that parses JSON natively, enumerates named pipes, and probes the RPC socket. The installer writes the interpreter explicitly into the agent's `command` field (`powershell -NoProfile -ExecutionPolicy Bypass -File <path>.ps1`); a thin `.cmd` trampoline is added only for an agent that raw-execs a bare path and rejects a multi-token command. Windows PowerShell 5.1 (`powershell.exe`) is the floor, not pwsh 7.
 
 ## Core handler
 

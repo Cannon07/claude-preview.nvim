@@ -1,3 +1,8 @@
+<!-- Status: superseded by ADR-0007 -->
+<!-- This ADR's central prediction (OpenCode would drop bash by going shim-free in TS)
+     was revised by #46: OpenCode drops bash *on Windows* by switching to the shared
+     PowerShell shim, not by owning a TS-native discovery path. See ADR-0007. -->
+
 # OpenCode's integration keeps the bash shim, deferring OS-independence to issue #46
 
 Issue #47 phase 3 flips OpenCode's [hook entry](../../CONTEXT.md#hook-entry) from `execSync`ing the bash [core handler](../../CONTEXT.md#core-handler) to a single [RPC](../../CONTEXT.md#rpc) into the in-process Lua orchestrator (see [ADR-0005](0005-core-handler-runs-in-process.md)). The natural next question: OpenCode's plugin is TypeScript, which runs natively on Windows. Should the flip also make OpenCode's integration the *first* bash-free [integration](../../CONTEXT.md#integration) — TS calls `nvim --server` directly, or speaks msgpack-rpc, with [socket discovery](../../CONTEXT.md#socket-discovery) reimplemented in TS?
