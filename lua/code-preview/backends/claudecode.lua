@@ -25,6 +25,21 @@ end
 local HOOK_MARKER = "code-preview"
 local LEGACY_HOOK_MARKER = "claude-preview"  -- match old entries during transition
 
+-- The hook entry is per-OS (issue #46 / ADR-0007): a .sh shim on Unix, a .ps1
+-- shim on Windows invoked through PowerShell. The installer writes the
+-- interpreter explicitly into Claude Code's `command` field, since the file is
+-- not directly executable on Windows.
+local function script_ext()
+  return vim.fn.has("win32") == 1 and ".ps1" or ".sh"
+end
+
+local function hook_command(script_path)
+  if vim.fn.has("win32") == 1 then
+    return string.format('powershell -NoProfile -ExecutionPolicy Bypass -File "%s"', script_path)
+  end
+  return script_path
+end
+
 local function settings_path()
   return vim.fn.getcwd() .. "/.claude/settings.local.json"
 end
@@ -65,8 +80,9 @@ end
 
 function M.install()
   local dir = scripts_dir()
-  local preview = dir .. "/code-preview-diff.sh"
-  local close   = dir .. "/code-close-diff.sh"
+  local ext = script_ext()
+  local preview = dir .. "/code-preview-diff" .. ext
+  local close   = dir .. "/code-close-diff" .. ext
 
   -- Verify scripts exist
   if vim.fn.filereadable(preview) == 0 then
@@ -85,14 +101,15 @@ function M.install()
   data.hooks.PreToolUse  = remove_ours(data.hooks.PreToolUse)
   data.hooks.PostToolUse = remove_ours(data.hooks.PostToolUse)
 
-  -- Add our entries
+  -- Add our entries. On Windows the command invokes PowerShell explicitly
+  -- against the .ps1 shim; on Unix it's the bare .sh path. See ADR-0007.
   table.insert(data.hooks.PreToolUse, {
     matcher = "Edit|Write|MultiEdit|Bash",
-    hooks   = { { type = "command", command = preview } },
+    hooks   = { { type = "command", command = hook_command(preview) } },
   })
   table.insert(data.hooks.PostToolUse, {
     matcher = "Edit|Write|MultiEdit|Bash",
-    hooks   = { { type = "command", command = close } },
+    hooks   = { { type = "command", command = hook_command(close) } },
   })
 
   write_settings(path, data)
