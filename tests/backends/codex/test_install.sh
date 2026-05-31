@@ -317,7 +317,7 @@ run_test "Install Codex CLI hooks writes correct config"        test_install_cod
 run_test "Install is idempotent (no duplicate entries)"         test_install_idempotent
 run_test "Install preserves user-authored hook entries"         test_install_preserves_user_hooks
 run_test "Uninstall preserves user-authored hook entries"       test_uninstall_preserves_user_hooks
-run_test "feature_flag_state reports missing/disabled/enabled"  test_feature_flag_state
+run_test "feature_flag_state defaults to enabled; honors both keys/bools" test_feature_flag_state
 run_test "feature_flag_state honors global ~/.codex/config.toml" test_feature_flag_state_global
 run_test "Install refuses to overwrite corrupted hooks.json"     test_install_refuses_corrupted_hooks_json
 run_test "Uninstall doesn't stomp corrupted hooks.json"          test_uninstall_handles_corrupted_hooks_json
