@@ -19,12 +19,15 @@ local function config_path()  return codex_dir() .. "/config.toml" end
 
 -- Markers we use to identify our hook entries when merging with user-authored
 -- hooks. The Codex docs allow multiple hooks per event, so we cooperate
--- rather than overwrite. We match by adapter script *path fragment* so the
--- check works for both the pre-hook (code-preview-diff.sh) and the post-hook
--- (code-close-diff.sh) — the latter doesn't share the "code-preview" prefix.
+-- rather than overwrite. We match by adapter script *stem* (no directory, no
+-- extension) so the check works across OSes: the installed command references
+-- code-preview-diff.sh / code-close-diff.sh on Unix and the .ps1 counterparts
+-- on Windows (issue #46), with forward- or back-slashed paths. Matching the
+-- bare stem covers all of them; both stems are specific enough that a
+-- user-authored hook is unlikely to collide.
 local HOOK_MARKERS = {
-  "backends/codex/code-preview-diff.sh",
-  "backends/codex/code-close-diff.sh",
+  "code-preview-diff",
+  "code-close-diff",
 }
 
 local function is_our_command(cmd)
@@ -112,6 +115,14 @@ local function global_config_path()
   -- user's real ~/.codex/config.toml. Production callers don't set this.
   local override = vim.env.CODE_PREVIEW_CODEX_GLOBAL_CONFIG
   if override and override ~= "" then return override end
+  -- Codex resolves its global config dir from $CODEX_HOME (default ~/.codex).
+  -- Honour it so users who relocate their Codex home — more common on Windows
+  -- (issue #46) — get the right path. expand("~") already resolves the
+  -- platform home, so the fallback works on Windows too.
+  local codex_home = vim.env.CODEX_HOME
+  if codex_home and codex_home ~= "" then
+    return codex_home .. "/config.toml"
+  end
   return vim.fn.expand("~/.codex/config.toml")
 end
 
@@ -132,7 +143,12 @@ local function ensure_executable(path)
     vim.notify("[code-preview] script not found: " .. path, vim.log.levels.ERROR)
     return false
   end
-  vim.fn.system({ "chmod", "+x", path })
+  -- chmod is a no-op (and the binary is absent) on Windows, where the hook
+  -- command invokes the interpreter explicitly (powershell -File ...) rather
+  -- than relying on an executable bit. See issue #46.
+  if vim.fn.has("unix") == 1 then
+    vim.fn.system({ "chmod", "+x", path })
+  end
   return true
 end
 

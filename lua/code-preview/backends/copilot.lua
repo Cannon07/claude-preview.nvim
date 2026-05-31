@@ -22,9 +22,11 @@ local function shquote(s)
 end
 
 -- True iff `path` looks like a code-preview.json our installer produced. We
--- match on the pre-tool adapter script name — every install() invocation
--- writes it verbatim, and it's specific enough that user-authored hook
--- files are unlikely to collide. Guards status display and uninstall from
+-- match on the pre-tool adapter script *stem* (no extension) — every install()
+-- writes it verbatim, and it's specific enough that user-authored hook files
+-- are unlikely to collide. Matching the stem rather than code-preview-diff.sh
+-- keeps detection working on Windows, where the installed command references
+-- the .ps1 counterpart (issue #46). Guards status display and uninstall from
 -- misidentifying a user-owned file with the same name.
 function M.is_our_config(path)
   if vim.fn.filereadable(path) == 0 then return false end
@@ -32,7 +34,7 @@ function M.is_our_config(path)
   if not f then return false end
   local content = f:read("*a")
   f:close()
-  return content and content:find("code-preview-diff.sh", 1, true) ~= nil
+  return content and content:find("code-preview-diff", 1, true) ~= nil
 end
 
 local function ensure_executable(path)
@@ -40,7 +42,12 @@ local function ensure_executable(path)
     vim.notify("[code-preview] script not found: " .. path, vim.log.levels.ERROR)
     return false
   end
-  vim.fn.system({ "chmod", "+x", path })
+  -- chmod is a no-op (and the binary is absent) on Windows, where the hook
+  -- command invokes the interpreter explicitly (powershell -File ...) rather
+  -- than relying on an executable bit. See issue #46.
+  if vim.fn.has("unix") == 1 then
+    vim.fn.system({ "chmod", "+x", path })
+  end
   return true
 end
 

@@ -54,11 +54,19 @@ function M.check()
 
   start("Claude Code backend")
 
-  -- jq (required by Claude Code shell hooks)
-  if vim.fn.executable("jq") == 1 then
+  -- Hook-shim dependency, reported per-OS. The Unix shims (.sh) parse JSON with
+  -- jq; the Windows shims (.ps1) use PowerShell's native ConvertFrom-Json, so jq
+  -- is irrelevant there. See issue #46.
+  if vim.fn.has("win32") == 1 then
+    if vim.fn.executable("powershell") == 1 then
+      ok("PowerShell is available (used by the Windows hook shims; built in on Windows 11)")
+    else
+      warn("powershell not found in PATH (required by the Windows hook scripts)")
+    end
+  elseif vim.fn.executable("jq") == 1 then
     ok("jq is available")
   else
-    warn("jq not found in PATH (required by Claude Code hook scripts)")
+    warn("jq not found in PATH (required by the Unix hook scripts)")
   end
 
   -- Hook scripts executable
