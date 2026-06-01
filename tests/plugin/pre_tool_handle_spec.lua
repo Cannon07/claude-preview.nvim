@@ -33,6 +33,14 @@ describe("pre_tool.handle (Bash)", function()
   end)
 
   it("redirect to existing file marks bash_modified", function()
+    -- Skipped on Windows: this case needs to create the file on disk (io.open
+    -- of a /tmp path fails on Windows) AND have bash_detect resolve a Windows
+    -- path, which is Unix-path-only today (issue #46, handoff item 3). The
+    -- bash-on-Windows work will re-enable this. The new-file/rm cases above use
+    -- forward-slash paths that don't need an on-disk file, so they still run.
+    if vim.fn.has("win32") == 1 then
+      return pending("bash_detect is Unix-path-only on Windows (issue #46)")
+    end
     local p = "/tmp/code-preview-test-existing-" .. tostring(vim.loop.hrtime())
     local fh = assert(io.open(p, "w")); fh:write("hi"); fh:close()
     pre_tool.handle(payload("Bash", { command = "echo x > " .. p }), "claudecode")
