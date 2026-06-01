@@ -2,14 +2,10 @@ name: E2E Tests
 
 on:
   push:
-    # TEMPORARY (issue #46): feat/windows-46 is here only to exercise the new
-    # windows-test job on a branch before it reaches main. REMOVE this branch
-    # from the list before merging the Windows work.
-    branches: [main, feat/windows-46]
+    branches: [main]
   pull_request:
     branches: [main]
-  # Manual trigger so the Windows job can be validated against a feature branch
-  # once this workflow (with workflow_dispatch) exists on the default branch.
+  # Manual trigger for running the suite against a branch on demand.
   workflow_dispatch:
 
 jobs:
