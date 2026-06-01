@@ -2,9 +2,15 @@ name: E2E Tests
 
 on:
   push:
-    branches: [main]
+    # TEMPORARY (issue #46): feat/windows-46 is here only to exercise the new
+    # windows-test job on a branch before it reaches main. REMOVE this branch
+    # from the list before merging the Windows work.
+    branches: [main, feat/windows-46]
   pull_request:
     branches: [main]
+  # Manual trigger so the Windows job can be validated against a feature branch
+  # once this workflow (with workflow_dispatch) exists on the default branch.
+  workflow_dispatch:
 
 jobs:
   test:
@@ -50,3 +56,71 @@ jobs:
           chmod +x tests/run.sh tests/run_lua.sh tests/helpers.sh
           chmod +x bin/*.sh
           ./tests/run.sh
+
+  # Windows runs a different, narrower strategy than the Unix matrix above:
+  # - No bash E2E suite (tests/run.sh is bash + jq; deliberately not ported — #46).
+  # - Lua specs run per-file: PlenaryBustedDirectory hangs headless on Windows,
+  #   but PlenaryBustedFile works (issue #46 handoff).
+  # - A PowerShell shim syntax/load check runs under Windows PowerShell 5.1
+  #   (`shell: powershell`), the floor the installed Claude Code hook actually uses.
+  windows-test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          # Pinned to the version the claudecode slice was manually validated on.
+          version: v0.11.2
+
+      - name: Install plenary.nvim (test dependency)
+        shell: powershell
+        run: git clone --depth 1 https://github.com/nvim-lua/plenary.nvim deps/plenary.nvim
+
+      - name: Verify Neovim
+        shell: powershell
+        run: nvim --version | Select-Object -First 3
+
+      - name: PowerShell shim syntax + load check (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . .\bin\nvim-socket.ps1
+          . .\bin\nvim-call.ps1
+          if (-not (Get-Command Find-NvimSocket -ErrorAction SilentlyContinue)) {
+            throw 'Find-NvimSocket not defined after dot-sourcing nvim-socket.ps1'
+          }
+          if (-not (Get-Command Invoke-NvimCall -ErrorAction SilentlyContinue)) {
+            throw 'Invoke-NvimCall not defined after dot-sourcing nvim-call.ps1'
+          }
+          Write-Host 'PowerShell shims parse and define their expected functions.'
+
+      - name: Run Lua specs (per-file)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # bash_detect specs are Unix-path-only today (issue #46 handoff item 3):
+          # looks_like_path rejects backslashes and resolve() only treats
+          # /-prefixed strings as absolute. Excluded until ported to Windows paths.
+          $specs = Get-ChildItem tests/plugin -Filter *_spec.lua |
+                   Where-Object { $_.Name -ne 'pre_tool_bash_detect_spec.lua' }
+          $failed = @()
+          foreach ($spec in $specs) {
+            Write-Host "-- $($spec.Name) --"
+            $raw = & nvim --headless --clean -u tests/minimal_init.lua `
+              -c "PlenaryBustedFile $($spec.FullName) {minimal_init = 'tests/minimal_init.lua'}" 2>&1 | Out-String
+            # Strip ANSI colour codes so the summary counts parse reliably.
+            $clean = [regex]::Replace($raw, "\x1b\[[0-9;]*m", "")
+            Write-Host $clean
+            if ($clean -match 'Failed\s*:\s*[1-9]' -or $clean -match 'Errors\s*:\s*[1-9]') {
+              $failed += $spec.Name
+            }
+          }
+          if ($failed.Count -gt 0) {
+            throw "Lua specs failed on Windows: $($failed -join ', ')"
+          }
+          Write-Host 'All Windows Lua specs passed.'
