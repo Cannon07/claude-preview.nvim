@@ -103,6 +103,14 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
+          # Run each spec in its own headless nvim by calling plenary.busted.run
+          # directly (in-process). We can't use PlenaryBustedFile here: it's
+          # nargs=1 and spawns a CHILD nvim that wouldn't load tests/minimal_init.lua
+          # (so the plugin rtp would be missing); and PlenaryBustedDirectory hangs
+          # headless on Windows. Running busted.run in a process already started
+          # with -u tests/minimal_init.lua sidesteps both, and it sets the exit
+          # code (0 = pass, non-zero = fail/error) via :cq, so no output parsing.
+          #
           # bash_detect specs are Unix-path-only today (issue #46 handoff item 3):
           # looks_like_path rejects backslashes and resolve() only treats
           # /-prefixed strings as absolute. Excluded until ported to Windows paths.
@@ -111,14 +119,11 @@ jobs:
           $failed = @()
           foreach ($spec in $specs) {
             Write-Host "-- $($spec.Name) --"
-            $raw = & nvim --headless --clean -u tests/minimal_init.lua `
-              -c "PlenaryBustedFile $($spec.FullName) {minimal_init = 'tests/minimal_init.lua'}" 2>&1 | Out-String
-            # Strip ANSI colour codes so the summary counts parse reliably.
-            $clean = [regex]::Replace($raw, "\x1b\[[0-9;]*m", "")
-            Write-Host $clean
-            if ($clean -match 'Failed\s*:\s*[1-9]' -or $clean -match 'Errors\s*:\s*[1-9]') {
-              $failed += $spec.Name
-            }
+            # Forward-slash the path: it is spliced into a Lua [[...]] literal.
+            $abs = $spec.FullName -replace '\\', '/'
+            & nvim --headless --clean -u tests/minimal_init.lua `
+              -c "lua require('plenary.busted').run([[$abs]])"
+            if ($LASTEXITCODE -ne 0) { $failed += $spec.Name }
           }
           if ($failed.Count -gt 0) {
             throw "Lua specs failed on Windows: $($failed -join ', ')"
