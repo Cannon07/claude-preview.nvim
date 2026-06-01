@@ -15,7 +15,11 @@ local enabled = false
 function M.init(opts)
   enabled = opts and opts.debug or false
   if enabled then
-    log_file_path = vim.fn.stdpath("log") .. "/code-preview.log"
+    -- vim.fs.normalize keeps the separator consistent: on Windows stdpath("log")
+    -- is backslashed (…\nvim-data) and the "/code-preview.log" suffix would
+    -- otherwise leave a mixed-separator path. Normalising yields all forward
+    -- slashes (which io.open accepts on every OS); on Unix it's a no-op.
+    log_file_path = vim.fs.normalize(vim.fn.stdpath("log") .. "/code-preview.log")
   end
 end
 

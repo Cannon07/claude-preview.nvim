@@ -17,11 +17,18 @@
 
 # Probe a server address for responsiveness. We only care about the exit code;
 # all stdout/stderr is discarded.
+#
+# --headless is REQUIRED on Windows: without it, `nvim --server <addr>
+# --remote-expr ...` starts a local TUI instead of acting purely as a remote
+# client, and that local instance exits 0 even when <addr> is dead — a false
+# positive that would make this probe accept stale pidfiles. With --headless,
+# a dead server correctly yields a non-zero exit. (Validated on nvim 0.11,
+# Windows; the Unix shim does not need this flag.)
 function Test-NvimResponsive {
   param([string]$Server)
   if ([string]::IsNullOrEmpty($Server)) { return $false }
   try {
-    & nvim --server $Server --remote-expr "1" *> $null
+    & nvim --headless --server $Server --remote-expr "1" *> $null
     return ($LASTEXITCODE -eq 0)
   } catch {
     return $false

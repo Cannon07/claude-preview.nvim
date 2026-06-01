@@ -35,16 +35,27 @@ function Invoke-NvimCall {
 
     # Only Module / Function / tmp — all controlled by us — enter the Lua source.
     # User data flows through the tempfile as JSON, decoded by the dispatcher.
-    $expr = "luaeval(`"require('code-preview.rpc').dispatch('$Module', '$Function', '$tmpLua')`")"
+    #
+    # Quoting (the ADR-0007 5.1 spike, now RESOLVED): the expression must contain
+    # NO double-quote characters. Windows PowerShell 5.1 lacks
+    # PSNativeCommandArgumentPassing and strips embedded double quotes when handing
+    # an argument to nvim.exe; a `luaeval("...")` form arrives as a bare
+    # `luaeval(require(...))`, which nvim parses as Vimscript and rejects with
+    # E117 (validated empirically on 5.1). So we use a single-quoted Vimscript
+    # string for the luaeval body and Lua long-bracket strings ([[...]]) for the
+    # module/function/path literals — zero quote characters of either kind, so
+    # there is nothing for 5.1 to mangle, and it is equally correct under pwsh 7.
+    # Safe because Module/Function/tmpLua are all our own values and never
+    # contain the long-bracket terminator ]].
+    $expr = "luaeval('require([[code-preview.rpc]]).dispatch([[$Module]], [[$Function]], [[$tmpLua]])')"
 
-    # SPIKE / KNOWN RISK (ADR-0007): Windows PowerShell 5.1 lacks
-    # PSNativeCommandArgumentPassing and can mangle embedded double quotes when
-    # handing $expr to nvim.exe. $expr deliberately keeps user data out and uses
-    # single quotes inside the Lua source, but the outer luaeval("...") still
-    # carries double quotes. Validate the exact quoting on a real Windows box;
-    # if 5.1 mangles it, the fix is Start-Process with -ArgumentList or an
-    # escaped arg array — confirm empirically before committing a workaround.
-    $out = & nvim --server $Server --remote-expr $expr 2>$null
+    # --headless is REQUIRED on Windows: without it nvim starts a local TUI on
+    # this invocation (emitting terminal escape sequences to stdout and NOT
+    # returning the --remote-expr result) instead of acting as a pure remote
+    # client. With --headless the result is returned cleanly. See nvim-socket.ps1
+    # for the matching rationale; validated on nvim 0.11, Windows. The Unix shim
+    # does not need this flag.
+    $out = & nvim --headless --server $Server --remote-expr $expr 2>$null
     return $out
   }
   finally {

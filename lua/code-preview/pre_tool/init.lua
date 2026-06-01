@@ -34,6 +34,18 @@ local function next_id()
 end
 
 local function tmpdir()
+  -- Windows has no /tmp, and $TMPDIR is usually unset there (it's a POSIX
+  -- convention); a normal user nvim would otherwise fall through to "/tmp",
+  -- which resolves to a nonexistent C:\tmp and makes every diff tempfile write
+  -- fail. Use the standard Windows temp vars, falling back to nvim's own temp
+  -- dir, and forward-slash it so it composes cleanly with the "/code-preview-*"
+  -- suffixes below (issue #46). The Unix branch is left byte-identical — the
+  -- macOS path and the shell E2E suite depend on $TMPDIR/"/tmp" exactly.
+  if vim.fn.has("win32") == 1 then
+    local dir = os.getenv("TMP") or os.getenv("TEMP")
+      or vim.fn.fnamemodify(vim.fn.tempname(), ":h")
+    return (dir:gsub("\\", "/"))
+  end
   return os.getenv("TMPDIR") or "/tmp"
 end
 
