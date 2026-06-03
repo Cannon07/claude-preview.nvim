@@ -19,3 +19,20 @@ We therefore: rename `bash_detect` → `shell_detect` (behind the unchanged `M.d
 - The existing POSIX grammar's behaviour must stay byte-identical through the restructure — `pre_tool_bash_detect_spec.lua` (renamed alongside the module) is the safety net.
 - `M.detect(cmd, cwd)` stays stable, so callers (`pre_tool.handle`) are untouched. The broader integration-registry / install-engine consolidation considered in the same architecture review is **out of scope** here and deferred.
 - This refines [ADR-0007](0007-windows-shim-via-shared-powershell-discovery.md)'s "one implementation per OS" principle for the *detection* layer: detection is split by *capability axis*, not by OS.
+
+## Update — resolved in the #46 follow-up
+
+The deferral above is closed: STEP 0 was gathered and the PowerShell grammar shipped **in the same PR** as the split, so the title's "defer grammar" no longer describes reality. The implementation also corrected two premises in the original text:
+
+- **It is a separate tool, not the Bash tool emitting PowerShell.** STEP 0 (raw hook stdin teed on the Windows box, cross-checked against the Claude Code session transcripts) showed Claude Code on Windows exposes a distinct **`PowerShell`** tool alongside `Bash`, and routes shell file ops through it (the Haiku model deletes via `Remove-Item`, moves via `Move-Item`, writes via `Set-Content`/`Out-File`/`Add-Content`). `tool_name` is `"PowerShell"` with a Bash-shaped `{command}` payload. (Opus, by contrast, drives git-bash and emits POSIX `rm` with Windows-shaped paths — exactly the cross-cutting case this ADR predicted.)
+- **Routing was therefore NOT fine** — contrary to the assumption that the detector was the only gap. The PreToolUse matcher was `Edit|Write|MultiEdit|Bash`, so the hook **never fired** for the `PowerShell` tool; the command never reached the detector. The fix needed two layers this ADR did not anticipate, on top of the detection split:
+  1. **Matcher** — add `PowerShell` to the claudecode Pre/PostToolUse matchers so the hook fires at all.
+  2. **Normaliser** — fold `tool_name="PowerShell"` onto canonical `Bash` (a shell proposal, Tier-1 indicator-only, `bash_*` origin prefix), so the dispatcher/emitter and `shell_detect` need no awareness of a separate tool.
+
+What shipped for the detection layer itself, per this ADR:
+
+- `bash_detect.lua` → `shell_detect.lua` (and `pre_tool_bash_detect_spec.lua` → `pre_tool_shell_detect_spec.lua`), behind the unchanged `M.detect(cmd, cwd)`.
+- An OS-selected **path-convention adapter**: Unix (byte-identical) and Windows (`C:\`/`C:/`, UNC `\\…`, backslash, relative-against-a-backslash-cwd). The Windows adapter emits canonical backslash paths because `fnamemodify(":p")` is a no-op on an already-absolute Windows path, so the detector's output must already match the form Edit/Write key the changes registry with.
+- The **PowerShell grammar**: `Remove-Item`/`Set-Content`/`Out-File`/`Add-Content`/`Move-Item`/`Copy-Item` (+ aliases), `-Path`/`-Destination`/positional, comma-list arrays (including spaces after commas) and here-strings. POSIX stays byte-identical because the PowerShell verbs deliberately exclude the bash aliases (`rm`/`cp`/`mv`/`tee`), so the two vocabularies never collide.
+
+Scope honesty: the command matchers are **table-shaped for the PowerShell vocabulary** (verb→category tables) but the POSIX matchers remain the original per-verb functions rather than a single shared grammar table. The ADR's "a second grammar slots in as data" intent is met functionally (the PowerShell grammar was added as data without disturbing POSIX), not as one unified table; a full grammar-table refactor of POSIX was not needed to land Windows support and stays out of scope.
