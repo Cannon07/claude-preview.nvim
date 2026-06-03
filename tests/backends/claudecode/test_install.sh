@@ -26,7 +26,11 @@ test_install_claude_hooks() {
   assert_contains "$content" "PostToolUse" "should have PostToolUse hook" || return 1
   assert_contains "$content" "code-preview-diff.sh" "should reference diff script" || return 1
   assert_contains "$content" "code-close-diff.sh" "should reference close script" || return 1
-  assert_contains "$content" "Edit|Write|MultiEdit|Bash" "should match Edit/Write/MultiEdit/Bash tools" || return 1
+  # PowerShell is matched too: on Windows Claude Code routes shell file ops
+  # (Remove-Item / Set-Content …) through a distinct PowerShell tool (issue #46
+  # follow-up). The matcher is the same on every OS; the normaliser folds
+  # PowerShell onto Bash.
+  assert_contains "$content" "Edit|Write|MultiEdit|Bash|PowerShell" "should match Edit/Write/MultiEdit/Bash/PowerShell tools" || return 1
 }
 
 # ── Test: Uninstall Claude Code hooks ────────────────────────────

@@ -57,9 +57,10 @@ local function mark_change_and_reveal(abs_file_path, action)
   local reveal_dir = nil
   if cfg.neo_tree.reveal_root == "git" then
     local parent = vim.fn.fnamemodify(abs_file_path, ":h")
-    local git_out = vim.fn.systemlist(
-      "git -C " .. vim.fn.shellescape(parent) .. " rev-parse --show-toplevel 2>/dev/null"
-    )
+    -- List-form (no shell): avoids the POSIX-only `2>/dev/null` redirect, which
+    -- misbehaves under Windows cmd. `shell_error` still gates the result, so a
+    -- non-repo parent (git's stderr + non-zero exit) simply leaves reveal_dir nil.
+    local git_out = vim.fn.systemlist({ "git", "-C", parent, "rev-parse", "--show-toplevel" })
     if vim.v.shell_error == 0 and git_out[1] and git_out[1] ~= "" then
       reveal_dir = git_out[1]
     end

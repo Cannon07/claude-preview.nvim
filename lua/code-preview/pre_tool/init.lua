@@ -11,7 +11,7 @@ local M = {}
 
 local normalisers = require("code-preview.pre_tool.normalisers")
 local emitters    = require("code-preview.pre_tool.emitters")
-local bash_detect = require("code-preview.pre_tool.bash_detect")
+local shell_detect = require("code-preview.pre_tool.shell_detect")
 
 local apply_edit       = require("code-preview.apply.edit")
 local apply_multi_edit = require("code-preview.apply.multi_edit")
@@ -167,7 +167,7 @@ end
 
 local function handle_bash(input)
   local cmd = input.tool_input.command or ""
-  local detected = bash_detect.detect(cmd, input.cwd or "")
+  local detected = shell_detect.detect(cmd, input.cwd or "")
 
   local touched = false
 

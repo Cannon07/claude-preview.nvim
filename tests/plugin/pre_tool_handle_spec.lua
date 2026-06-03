@@ -32,18 +32,23 @@ describe("pre_tool.handle (Bash)", function()
     assert.equals("bash_created", changes.get(p))
   end)
 
-  it("redirect to existing file marks bash_modified", function()
-    -- Skipped on Windows: this case needs to create the file on disk (io.open
-    -- of a /tmp path fails on Windows) AND have bash_detect resolve a Windows
-    -- path, which is Unix-path-only today (issue #46, handoff item 3). The
-    -- bash-on-Windows work will re-enable this. The new-file/rm cases above use
-    -- forward-slash paths that don't need an on-disk file, so they still run.
-    if vim.fn.has("win32") == 1 then
-      return pending("bash_detect is Unix-path-only on Windows (issue #46)")
-    end
-    local p = "/tmp/code-preview-test-existing-" .. tostring(vim.loop.hrtime())
+  it("shell write to an existing file marks bash_modified", function()
+    -- Portable across OSes: use the OS temp dir (no hardcoded /tmp) so the file
+    -- can actually be created on disk on Windows too. Drive the same shell-write
+    -- the agent would: a redirect on Unix, and a PowerShell Set-Content on
+    -- Windows (Claude Code's PowerShell tool, folded onto Bash by the
+    -- normaliser). Both route through handle_bash → shell_detect.
+    local dir = vim.fn.fnamemodify(vim.fn.tempname(), ":h")
+    -- Join with the native separator: the changes registry keys on
+    -- fnamemodify(":p"), which does not flip separators on Windows, so a mixed
+    -- path here would not match the detector's canonical backslash output.
+    local sep = (vim.fn.has("win32") == 1) and "\\" or "/"
+    local p = dir .. sep .. "code-preview-test-existing-" .. tostring(vim.loop.hrtime()) .. ".txt"
     local fh = assert(io.open(p, "w")); fh:write("hi"); fh:close()
-    pre_tool.handle(payload("Bash", { command = "echo x > " .. p }), "claudecode")
+    local cmd = (vim.fn.has("win32") == 1)
+      and ('Set-Content -Path "' .. p .. '" -Value "x"')
+      or  ("echo x > " .. p)
+    pre_tool.handle(payload("Bash", { command = cmd }), "claudecode")
     assert.equals("bash_modified", changes.get(p))
     os.remove(p)
   end)

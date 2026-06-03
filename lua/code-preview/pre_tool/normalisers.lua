@@ -19,6 +19,27 @@ local function identity(raw)
   return raw
 end
 
+-- Claude Code's hook payload is already canonical ({tool_name, cwd, tool_input}),
+-- so its normaliser is almost identity. The one translation is Windows-only: in
+-- addition to `Bash`, Claude Code exposes a distinct `PowerShell` tool and routes
+-- shell file ops through it (e.g. the Haiku model deletes via `Remove-Item …`,
+-- moves via `Move-Item`, writes via `Set-Content`/`Out-File`). Semantically those
+-- are shell proposals — Tier-1 indicator-only, `bash_*` origin prefix — identical
+-- in handling to `Bash`. Folding `PowerShell` onto the canonical `Bash` tool here
+-- means the dispatcher, emitters, and shell_detect need no awareness of a separate
+-- tool: shell_detect's grammar is what tells PowerShell and POSIX commands apart.
+-- (STEP 0 of the shell-detect work confirmed tool_name="PowerShell"; the hook
+-- matcher gained `PowerShell` so the proposal reaches us at all.)
+local function claudecode(raw)
+  if raw and raw.tool_name == "PowerShell" then
+    local out = {}
+    for k, v in pairs(raw) do out[k] = v end
+    out.tool_name = "Bash"
+    return out
+  end
+  return raw
+end
+
 -- OpenCode tools as of 2026-05-19: edit, write, multiedit, bash, apply_patch
 -- (plus read, glob, grep, which the TS-side allowlist filters out before they
 -- ever reach this normaliser). Update this map when OpenCode adds a tool the
@@ -234,7 +255,7 @@ local function codex(raw)
 end
 
 M.normalisers = {
-  claudecode = identity,
+  claudecode = claudecode,
   opencode   = opencode,
   copilot    = copilot,
   codex      = codex,

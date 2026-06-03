@@ -20,6 +20,27 @@ describe("normalisers.normalise (claudecode)", function()
   it("unknown backend falls back to identity", function()
     assert.are.same(canonical, normalisers.normalise(canonical, "future-agent"))
   end)
+
+  -- Windows: Claude Code routes shell file ops through a distinct `PowerShell`
+  -- tool (Haiku deletes via Remove-Item). It carries the same {command} shape as
+  -- Bash and is a shell proposal, so the normaliser folds it onto canonical Bash.
+  it("folds the PowerShell tool onto canonical Bash", function()
+    local raw = {
+      tool_name  = "PowerShell",
+      cwd        = "/proj",
+      tool_input = { command = 'Remove-Item -Path "foo.txt" -Force' },
+    }
+    local out = normalisers.normalise(raw, "claudecode")
+    assert.equals("Bash", out.tool_name)
+    assert.equals('Remove-Item -Path "foo.txt" -Force', out.tool_input.command)
+    assert.equals("/proj", out.cwd)
+  end)
+
+  it("does not mutate the input payload when folding PowerShell", function()
+    local raw = { tool_name = "PowerShell", cwd = "/proj", tool_input = { command = "ls" } }
+    normalisers.normalise(raw, "claudecode")
+    assert.equals("PowerShell", raw.tool_name)
+  end)
 end)
 
 describe("normalisers.normalise (opencode)", function()

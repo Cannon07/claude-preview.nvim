@@ -7,10 +7,46 @@ done on macOS and could not see what Claude Code actually emits on Windows.
 This is a **follow-up to the merged claudecode Windows slice** (`#73`, squash
 commit `ead0c2c` on `main`). Branch: `feat/shell-detect-windows`.
 
-## The bug
+## ⚠ STEP 0 results — premise corrected (this doc was written on macOS)
+
+Ground truth captured on the Windows box (teeing raw hook stdin + reading the
+Claude Code session transcripts) refined the bug in two ways the original
+premise got wrong:
+
+1. **It is a separate tool, not the Bash tool emitting PowerShell.** Claude Code
+   on Windows exposes a distinct **`PowerShell`** tool (alongside `Bash`) and
+   routes shell file ops through it — the Haiku model deletes via
+   `Remove-Item`, moves via `Move-Item`, writes via `Set-Content`/`Out-File`.
+   `tool_name` is `"PowerShell"`, payload shape `{command, description}` (same as
+   Bash). The PreToolUse hook matcher was `Edit|Write|MultiEdit|Bash`, so the
+   hook **never fired** for those proposals — the command never reached the
+   detector at all. (Opus, by contrast, uses git-bash and emits POSIX `rm`.)
+2. **Path resolution was the bug even for git-bash POSIX commands.** The hook
+   `cwd` is a Windows backslash path; `rm "D:\proj\x"` had its cwd prepended to
+   an already-absolute path (garbage), and the redirect/`looks_like_path` path
+   rejected backslashes outright.
+
+So the fix is three layers (all in this PR): **matcher** (`+PowerShell`),
+**normaliser** (fold `PowerShell` → canonical `Bash`), and **shell_detect**
+(PowerShell grammar + a Windows path adapter). Real samples used as spec inputs:
+
+```
+Remove-Item -Path ".step0\ps-delete.txt" -Force
+Move-Item   -Path ".step0\ps-move-src.txt" -Destination ".step0\ps-move-dst.txt" -Force
+Copy-Item   -Path ".step0\ps-copy-src.txt" -Destination ".step0\ps-copy-dst.txt" -Force
+Set-Content -Path ".step0\ps-pswrite.txt" -Value @"…here-string…"@
+Add-Content -Path ".step0\ps-existing.txt" -Value "Appended via PowerShell Add-Content"
+rm -f "D:\other\cp-src.txt"   # git-bash POSIX, Windows-absolute path
+```
+
+The sections below are the original macOS-written plan; read them through the
+correction above (notably: routing was NOT fine — the normaliser + matcher both
+needed a Windows entry, which STEP 0 explicitly flagged as the fallback case).
+
+## The bug (original framing — see correction above)
 
 On Windows, deleting a file (and other shell writes) does **not** mark neo-tree.
-Claude Code's `Bash` tool emits **PowerShell** (`Remove-Item …`) instead of `rm`,
+A shell delete/write emits **PowerShell** (`Remove-Item …`) instead of `rm`,
 and our detector only understands Unix commands + Unix paths, so it finds nothing.
 
 The preview path (Edit/Write/MultiEdit) already works on Windows — this is the
@@ -23,8 +59,9 @@ The preview path (Edit/Write/MultiEdit) already works on Windows — this is the
   two axes: **command vocabulary** (`rm`, `>`/`>>`, `mv`, `cp`, `tee`, `sed -i`)
   and **path resolution** (`resolve()`/`looks_like_path()` only handle `/`-absolute
   and `~/`; no `C:\`, backslashes, or `%USERPROFILE%`).
-- `lua/code-preview/pre_tool/normalisers.lua` — confirms routing: `tool_name="Bash"`
-  → `handle_bash` → `bash_detect`. Routing is fine; the detector is the gap.
+- `lua/code-preview/pre_tool/normalisers.lua` — routing. **Correction (STEP 0):**
+  routing was NOT fine. The `PowerShell` tool needed a matcher entry to fire at
+  all, and the claudecode normaliser now folds `tool_name="PowerShell"` → `Bash`.
 - `tests/plugin/pre_tool_bash_detect_spec.lua` (CI-excluded on Windows) and the
   `bash_modified` case in `pre_tool_handle_spec.lua` (marked `pending` on Windows)
   — both are this task's to re-enable with Windows-path awareness.

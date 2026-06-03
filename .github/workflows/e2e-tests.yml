@@ -107,11 +107,11 @@ jobs:
           # with -u tests/minimal_init.lua sidesteps both, and it sets the exit
           # code (0 = pass, non-zero = fail/error) via :cq, so no output parsing.
           #
-          # bash_detect specs are Unix-path-only today (issue #46 handoff item 3):
-          # looks_like_path rejects backslashes and resolve() only treats
-          # /-prefixed strings as absolute. Excluded until ported to Windows paths.
-          $specs = Get-ChildItem tests/plugin -Filter *_spec.lua |
-                   Where-Object { $_.Name -ne 'pre_tool_bash_detect_spec.lua' }
+          # The shell detector is now Windows-aware (issue #46 follow-up):
+          # pre_tool_shell_detect_spec.lua (renamed from *_bash_detect_spec) runs
+          # its Windows-path + PowerShell rows here and marks the POSIX rows
+          # pending, so the whole tests/plugin directory runs on Windows.
+          $specs = Get-ChildItem tests/plugin -Filter *_spec.lua
           $failed = @()
           foreach ($spec in $specs) {
             Write-Host "-- $($spec.Name) --"

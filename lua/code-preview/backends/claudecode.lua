@@ -25,6 +25,16 @@ end
 local HOOK_MARKER = "code-preview"
 local LEGACY_HOOK_MARKER = "claude-preview"  -- match old entries during transition
 
+-- Tools whose proposals we intercept. On Windows, Claude Code exposes a
+-- distinct `PowerShell` tool alongside `Bash` and routes shell file ops
+-- (Remove-Item / Move-Item / Set-Content …) through it — observed with the
+-- Haiku model, which deletes via `Remove-Item`. Without `PowerShell` in the
+-- matcher the PreToolUse hook never fires for those proposals, so a shell
+-- delete/write never marks neo-tree (issue #46 follow-up). The normaliser
+-- folds `PowerShell` into the canonical `Bash` path; here we just make sure
+-- the hook fires. Harmless on Unix (no such tool is ever emitted there).
+local TOOL_MATCHER = "Edit|Write|MultiEdit|Bash|PowerShell"
+
 -- The hook entry is per-OS (issue #46 / ADR-0007): a .sh shim on Unix, a .ps1
 -- shim on Windows invoked through PowerShell. The installer writes the
 -- interpreter explicitly into Claude Code's `command` field, since the file is
@@ -104,11 +114,11 @@ function M.install()
   -- Add our entries. On Windows the command invokes PowerShell explicitly
   -- against the .ps1 shim; on Unix it's the bare .sh path. See ADR-0007.
   table.insert(data.hooks.PreToolUse, {
-    matcher = "Edit|Write|MultiEdit|Bash",
+    matcher = TOOL_MATCHER,
     hooks   = { { type = "command", command = hook_command(preview) } },
   })
   table.insert(data.hooks.PostToolUse, {
-    matcher = "Edit|Write|MultiEdit|Bash",
+    matcher = TOOL_MATCHER,
     hooks   = { { type = "command", command = hook_command(close) } },
   })
 
