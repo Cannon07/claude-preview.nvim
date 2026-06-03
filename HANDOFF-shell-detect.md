@@ -41,29 +41,48 @@ exact `tool_name` and raw command string Claude Code emits on Windows for:
 Confirm the `tool_name` is still `"Bash"` (if not, the normaliser tool-map needs a
 Windows entry too). **Paste these samples into the PR** — they are the spec inputs.
 
-## Design requirements (grammar)
+## Design — split two independent axes (decided; per the architecture review)
 
-Extend detection to PowerShell, case-insensitively, alongside the existing Unix
-grammar (don't break Unix):
-- **Delete** → `deleted`: `Remove-Item`/`ri`/`rm`/`del`/`erase`/`rd`/`rmdir` (+ `-Path`,
-  `-Recurse`, `-Force`, positional).
-- **Write** → `bash_created`/`bash_modified`: `Set-Content`/`sc`, `Out-File`,
-  `Add-Content`/`ac`, `Tee-Object`/`tee`, and `>`/`>>` (PowerShell supports these too).
-- **Move/Copy** → write target: `Move-Item`/`mi`/`move`/`ren`/`rni`, `Copy-Item`/`cpi`/`copy`/`cp`.
-- **Separators**: PS uses `;`, `|`, newlines; `&&`/`||` exist in PS7 but **not 5.1**
-  (the installed hook runs under 5.1). `-Path` may take a comma-list and wildcards.
-- **Paths**: drive-letter absolute (`C:\…`, `C:/…`), UNC (`\\…`), backslash or
-  forward slash, `%USERPROFILE%` / `$HOME` / `$env:USERPROFILE`. Keep the `bash_*`
-  origin-prefix semantics from [Status]/[Origin prefix] unchanged.
+The detector entangles two axes, and they are **not** the same as "OS" — a
+git-bash shell on Windows has POSIX grammar with Windows-ish paths. So do **not**
+add a blanket "Windows branch" and do **not** cut the module by OS:
 
-## ⚠ Structure decision is NOT yours to make alone
+1. **Path conventions** — `resolve()` / `looks_like_path()` / `is_transient()`:
+   today only `/`-absolute, `~/`, `$HOME`, `/dev/`. Windows needs `C:\` / `C:/`,
+   UNC `\\…`, backslash or forward slash, `%TEMP%` / `%USERPROFILE%`.
+2. **Command grammar** — which verbs/operators write or delete: POSIX
+   (`rm`, `>`/`>>`, `mv`, `cp`, `tee`, `sed -i`) vs PowerShell.
 
-A separate session is running `improve-codebase-architecture` (scoped to the
-cross-OS shim/discovery/**detection** layer) to decide whether `bash_detect`
-should grow into a per-OS `shell_detect` with grammar tables, or just gain a
-Windows branch. **Coordinate on that result before committing to a file split** —
-get the grammar working behind the current `M.detect(cmd, cwd)` interface first
-(callers shouldn't care), so the structure can be refactored independently.
+**The shape to build (this is decided — but keep it all behind the current
+`M.detect(cmd, cwd)` signature; callers must not change):**
+
+- **Rename `bash_detect` → `shell_detect`** so the interface stops lying. Update
+  the require site (`pre_tool/init.lua`), the spec filename, and the CI Windows
+  exclusion name.
+- **Extract a path-convention seam** (`resolve`/`looks_like_path`/`is_transient`
+  → a small adapter): a Unix impl (as today) + a Windows impl. This is the
+  highest-value, lowest-risk extraction and is needed *regardless* of which shell
+  the agent uses.
+- **Make the command matchers table-shaped** (verb / redirect / mv-cp-tee-sed) so
+  a grammar slots in as data, not as scattered `if` branches. Keep the POSIX
+  grammar **byte-identical** in behaviour (its edge cases come from real bugs).
+- **Add a PowerShell grammar adapter — but only after STEP 0 confirms** the
+  Windows Bash tool emits PowerShell (your `Remove-Item` observation says it
+  does; STEP 0 nails the exact cmdlets/aliases/params). Starting vocabulary to
+  confirm/expand from real samples, case-insensitive:
+  - Delete → `deleted`: `Remove-Item`/`ri`/`rm`/`del`/`erase`/`rd`/`rmdir`
+    (+ `-Path`, `-Recurse`, `-Force`, positional).
+  - Write → `bash_created`/`bash_modified`: `Set-Content`/`sc`, `Out-File`,
+    `Add-Content`/`ac`, `Tee-Object`/`tee`, and `>`/`>>`.
+  - Move/Copy → write target: `Move-Item`/`mi`/`move`/`ren`, `Copy-Item`/`cpi`/`copy`/`cp`.
+  - Separators: `;`, `|`, newlines; `&&`/`||` are PS7-only (the hook runs under
+    **5.1**). `-Path` may take a comma-list / wildcards.
+  - Keep `bash_*` origin-prefix semantics from [Status]/[Origin prefix] unchanged.
+
+**Out of bounds for this PR:** do **not** introduce a per-OS file split, an
+integration registry, or an install engine. The architecture review **deferred**
+all of that as uncoupled cleanup; your scope is the rename + the two seams + the
+confirmed grammar, nothing wider.
 
 ## Also in this PR (small, decided)
 
@@ -79,9 +98,9 @@ existing `shell_error` check. Verify on both OSes.
   `/tmp`, no `os.getenv("HOME")` assumptions — guard or branch per OS).
 - Add Windows-grammar specs from your STEP 0 samples.
 - macOS/Linux specs must stay green (the detector must remain correct on Unix).
-- The CI `windows-test` job (now on `main`) will exercise the Lua specs per-file;
-  remove `pre_tool_bash_detect_spec.lua` from its exclusion list once it passes on
-  Windows.
+- The CI `windows-test` job (now on `main`) excludes `pre_tool_bash_detect_spec.lua`
+  by filename. After the rename, update that exclusion to the new spec name, then
+  drop it entirely once the spec passes on Windows.
 
 ## Out of scope
 
