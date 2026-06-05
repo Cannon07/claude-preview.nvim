@@ -198,13 +198,11 @@ function M.check()
     warn("codex not found in PATH (install from https://github.com/openai/codex)")
   end
 
-  local codex_dir = plugin_root .. "/backends/codex"
+  -- Codex now uses the shared bin/hook-entry shim (checked above); no
+  -- per-backend adapter script remains. Codex-on-Windows is wired but not yet
+  -- validated end-to-end (issue #46).
   if is_win then
-    warn("Codex CLI on Windows is not yet supported (issue #46); use Claude Code on Windows")
-  else
-    for _, stem in ipairs({ "code-preview-diff", "code-close-diff" }) do
-      check_script(stem .. ".sh", codex_dir .. "/" .. stem .. ".sh")
-    end
+    warn("Codex CLI on Windows is not yet validated (issue #46); use Claude Code on Windows")
   end
 
   local codex_backend = require("code-preview.backends.codex")

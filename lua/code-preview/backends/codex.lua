@@ -9,23 +9,23 @@ local function plugin_root()
   return vim.fn.fnamemodify(lua_dir, ":h:h:h")
 end
 
-local function scripts_dir() return plugin_root() .. "/backends/codex" end
-local function pre_script()  return scripts_dir() .. "/code-preview-diff.sh" end
-local function post_script() return scripts_dir() .. "/code-close-diff.sh"  end
+local platform = require("code-preview.platform")
+
+local function bin_dir()     return plugin_root() .. "/bin" end
+local function hook_script() return bin_dir() .. "/hook-entry" .. platform.script_ext() end
 
 local function codex_dir()    return vim.fn.getcwd() .. "/.codex" end
 local function hooks_path()   return codex_dir() .. "/hooks.json" end
 local function config_path()  return codex_dir() .. "/config.toml" end
 
 -- Markers we use to identify our hook entries when merging with user-authored
--- hooks. The Codex docs allow multiple hooks per event, so we cooperate
--- rather than overwrite. We match by adapter script *stem* (no directory, no
--- extension) so the check works across OSes: the installed command references
--- code-preview-diff.sh / code-close-diff.sh on Unix and the .ps1 counterparts
--- on Windows (issue #46), with forward- or back-slashed paths. Matching the
--- bare stem covers all of them; both stems are specific enough that a
--- user-authored hook is unlikely to collide.
+-- hooks. The Codex docs allow multiple hooks per event, so we cooperate rather
+-- than overwrite. "hook-entry" is the current generic shim (ADR-0008); the
+-- code-preview-diff / code-close-diff stems match older per-backend installs so
+-- uninstall still cleans them up after an upgrade. Matched as substrings, so
+-- they work across OSes and slash styles.
 local HOOK_MARKERS = {
+  "hook-entry",
   "code-preview-diff",
   "code-close-diff",
 }
@@ -143,18 +143,13 @@ local function ensure_executable(path)
     vim.notify("[code-preview] script not found: " .. path, vim.log.levels.ERROR)
     return false
   end
-  -- chmod is a no-op (and the binary is absent) on Windows, where the hook
-  -- command invokes the interpreter explicitly (powershell -File ...) rather
-  -- than relying on an executable bit. See issue #46.
-  if vim.fn.has("unix") == 1 then
-    vim.fn.system({ "chmod", "+x", path })
-  end
+  platform.make_executable(path)  -- chmod +x on Unix; no-op on Windows
   return true
 end
 
 function M.install()
-  local pre, post = pre_script(), post_script()
-  if not (ensure_executable(pre) and ensure_executable(post)) then return end
+  local hook = hook_script()
+  if not ensure_executable(hook) then return end
 
   vim.fn.mkdir(codex_dir(), "p")
 
@@ -178,11 +173,11 @@ function M.install()
 
   table.insert(data.hooks.PreToolUse, {
     matcher = "",
-    hooks   = { { type = "command", command = pre } },
+    hooks   = { { type = "command", command = platform.hook_command(hook, "codex pre") } },
   })
   table.insert(data.hooks.PostToolUse, {
     matcher = "",
-    hooks   = { { type = "command", command = post } },
+    hooks   = { { type = "command", command = platform.hook_command(hook, "codex post") } },
   })
 
   write_json(hooks_path(), data)

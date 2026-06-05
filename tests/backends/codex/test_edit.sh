@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # test_edit.sh — E2E tests for Codex CLI Bash + edit workflows
 #
-# Drives Codex's hook payload shape ({tool_name, tool_input, cwd}) through
-# backends/codex/code-preview-diff.sh (pre) and code-close-diff.sh (post),
-# then verifies Neovim state via RPC.
+# Drives Codex's hook payload shape ({tool_name, tool_input, cwd}) through the
+# generic bin/hook-entry.sh (invoked as `codex pre` / `codex post`), then
+# verifies Neovim state via RPC.
 #
 # Codex specifics:
 #   - apply_patch carries the patch text in tool_input.command (not patch_text).
@@ -14,8 +14,8 @@
 #   - Bash detection: rm marks deleted; output redirection (Tier 1 shell
 #     writes) marks bash_modified / bash_created. Both clear on PostToolUse.
 
-CODEX_PRE="$REPO_ROOT/backends/codex/code-preview-diff.sh"
-CODEX_POST="$REPO_ROOT/backends/codex/code-close-diff.sh"
+CODEX_PRE="$REPO_ROOT/bin/hook-entry.sh"
+CODEX_POST="$REPO_ROOT/bin/hook-entry.sh"
 
 # Feed a Codex-shaped payload to the pre-tool adapter.
 #   $1 = tool_name, $2 = tool_input (JSON object)
@@ -30,7 +30,7 @@ run_codex_pre() {
     '{tool_name:$tn, cwd:$cwd, tool_input:$ti}')
   echo "$payload" | \
     NVIM_LISTEN_ADDRESS="$TEST_SOCKET" \
-    bash "$CODEX_PRE" 2>/dev/null || true
+    bash "$CODEX_PRE" codex pre 2>/dev/null || true
 }
 
 run_codex_post() {
@@ -44,7 +44,7 @@ run_codex_post() {
     '{tool_name:$tn, cwd:$cwd, tool_input:$ti}')
   echo "$payload" | \
     NVIM_LISTEN_ADDRESS="$TEST_SOCKET" \
-    bash "$CODEX_POST" 2>/dev/null || true
+    bash "$CODEX_POST" codex post 2>/dev/null || true
 }
 
 # ── Setup ────────────────────────────────────────────────────────
@@ -294,7 +294,7 @@ test_codex_malformed_payloads_skip() {
   # tool_input entirely absent
   local payload
   payload=$(jq -n --arg cwd "$TEST_PROJECT_DIR" '{tool_name:"Edit", cwd:$cwd}')
-  echo "$payload" | NVIM_LISTEN_ADDRESS="$TEST_SOCKET" bash "$CODEX_PRE" 2>/dev/null || true
+  echo "$payload" | NVIM_LISTEN_ADDRESS="$TEST_SOCKET" bash "$CODEX_PRE" codex pre 2>/dev/null || true
 
   sleep 0.3
 

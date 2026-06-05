@@ -7,8 +7,8 @@
 # the shim now just RPCs into pre_tool.handle, which uses the same
 # apply-patch.lua parser the other backends share.
 
-CODEX_PRE="$REPO_ROOT/backends/codex/code-preview-diff.sh"
-CODEX_POST="$REPO_ROOT/backends/codex/code-close-diff.sh"
+CODEX_PRE="$REPO_ROOT/bin/hook-entry.sh"
+CODEX_POST="$REPO_ROOT/bin/hook-entry.sh"
 
 # Build a Codex apply_patch payload — patch text lives in tool_input.command.
 run_codex_pre_patch() {
@@ -20,7 +20,7 @@ run_codex_pre_patch() {
     '{tool_name:"apply_patch", cwd:$cwd, tool_input:{command:$pt}}')
   echo "$payload" | \
     NVIM_LISTEN_ADDRESS="$TEST_SOCKET" \
-    bash "$CODEX_PRE" 2>/dev/null || true
+    bash "$CODEX_PRE" codex pre 2>/dev/null || true
 }
 
 run_codex_post_patch() {
@@ -32,7 +32,7 @@ run_codex_post_patch() {
     '{tool_name:"apply_patch", cwd:$cwd, tool_input:{command:$pt}}')
   echo "$payload" | \
     NVIM_LISTEN_ADDRESS="$TEST_SOCKET" \
-    bash "$CODEX_POST" 2>/dev/null || true
+    bash "$CODEX_POST" codex post 2>/dev/null || true
 }
 
 # ── Setup ────────────────────────────────────────────────────────

@@ -37,8 +37,9 @@ test_install_codex_hooks() {
   content="$(cat "$HOOKS_FILE")"
   assert_contains "$content" "PreToolUse"            "should have PreToolUse hook"  || return 1
   assert_contains "$content" "PostToolUse"           "should have PostToolUse hook" || return 1
-  assert_contains "$content" "code-preview-diff.sh"  "should reference pre-tool script"  || return 1
-  assert_contains "$content" "code-close-diff.sh"    "should reference post-tool script" || return 1
+  assert_contains "$content" "hook-entry.sh"  "should reference the generic hook-entry shim" || return 1
+  assert_contains "$content" "codex pre"      "PreToolUse should pass the pre event"  || return 1
+  assert_contains "$content" "codex post"     "PostToolUse should pass the post event" || return 1
 
   # Exactly one entry per event after a fresh install.
   local pre_count post_count
@@ -132,9 +133,8 @@ EOF
 
   local content
   content="$(cat "$HOOKS_FILE")"
-  assert_contains     "$content" "user-policy"           "user entry must survive uninstall"     || return 1
-  assert_not_contains "$content" "code-preview-diff.sh"  "our pre-hook must be removed"          || return 1
-  assert_not_contains "$content" "code-close-diff.sh"    "our post-hook must be removed"         || return 1
+  assert_contains     "$content" "user-policy"    "user entry must survive uninstall" || return 1
+  assert_not_contains "$content" "hook-entry.sh"  "our hooks must be removed"         || return 1
 }
 
 # ── Test: feature_flag_state reflects default-enabled semantics ──
