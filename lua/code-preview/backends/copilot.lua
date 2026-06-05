@@ -9,9 +9,14 @@ local function plugin_root()
   return vim.fn.fnamemodify(lua_dir, ":h:h:h")
 end
 
-local function scripts_dir() return plugin_root() .. "/backends/copilot" end
-local function pre_script()  return scripts_dir() .. "/code-preview-diff.sh" end
-local function post_script() return scripts_dir() .. "/code-close-diff.sh"  end
+local platform = require("code-preview.platform")
+
+local function bin_dir() return plugin_root() .. "/bin" end
+-- Copilot's hook field is `bash` (the value runs under a bash shell), so it
+-- always invokes the .sh shim — the PowerShell-wrapped command form doesn't
+-- apply to this field shape. Copilot-on-Windows (which would need git-bash)
+-- is deferred (issue #46).
+local function hook_script() return bin_dir() .. "/hook-entry.sh" end
 
 local function hooks_dir()   return vim.fn.getcwd() .. "/.github/hooks" end
 local function config_path() return hooks_dir() .. "/code-preview.json" end
@@ -22,19 +27,20 @@ local function shquote(s)
 end
 
 -- True iff `path` looks like a code-preview.json our installer produced. We
--- match on the pre-tool adapter script *stem* (no extension) — every install()
--- writes it verbatim, and it's specific enough that user-authored hook files
--- are unlikely to collide. Matching the stem rather than code-preview-diff.sh
--- keeps detection working on Windows, where the installed command references
--- the .ps1 counterpart (issue #46). Guards status display and uninstall from
--- misidentifying a user-owned file with the same name.
+-- match on the hook-entry shim stem ("hook-entry"), with "code-preview-diff"
+-- kept so older per-backend installs are still recognised for uninstall after
+-- an upgrade. Specific enough that user-authored hook files are unlikely to
+-- collide. Guards status display and uninstall from misidentifying a
+-- user-owned file with the same name.
 function M.is_our_config(path)
   if vim.fn.filereadable(path) == 0 then return false end
   local f = io.open(path, "r")
   if not f then return false end
   local content = f:read("*a")
   f:close()
-  return content and content:find("code-preview-diff", 1, true) ~= nil
+  if not content then return false end
+  return content:find("hook-entry", 1, true) ~= nil
+      or content:find("code-preview-diff", 1, true) ~= nil
 end
 
 local function ensure_executable(path)
@@ -42,26 +48,22 @@ local function ensure_executable(path)
     vim.notify("[code-preview] script not found: " .. path, vim.log.levels.ERROR)
     return false
   end
-  -- chmod is a no-op (and the binary is absent) on Windows, where the hook
-  -- command invokes the interpreter explicitly (powershell -File ...) rather
-  -- than relying on an executable bit. See issue #46.
-  if vim.fn.has("unix") == 1 then
-    vim.fn.system({ "chmod", "+x", path })
-  end
+  platform.make_executable(path)  -- chmod +x on Unix; no-op on Windows
   return true
 end
 
 function M.install()
-  local pre, post = pre_script(), post_script()
-  if not (ensure_executable(pre) and ensure_executable(post)) then return end
+  local hook = hook_script()
+  if not ensure_executable(hook) then return end
 
   vim.fn.mkdir(hooks_dir(), "p")
 
+  -- The bash field runs the shim under bash with the backend + event args.
   local data = {
     version = 1,
     hooks = {
-      preToolUse  = { { type = "command", bash = shquote(pre),  timeoutSec = 30 } },
-      postToolUse = { { type = "command", bash = shquote(post), timeoutSec = 30 } },
+      preToolUse  = { { type = "command", bash = shquote(hook) .. " copilot pre",  timeoutSec = 30 } },
+      postToolUse = { { type = "command", bash = shquote(hook) .. " copilot post", timeoutSec = 30 } },
     },
   }
 

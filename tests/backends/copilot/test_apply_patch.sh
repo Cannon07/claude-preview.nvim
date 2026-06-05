@@ -2,20 +2,20 @@
 # test_apply_patch.sh — E2E tests for Copilot CLI apply_patch workflow
 #
 # Drives the full pipeline for GPT-style apply_patch tool calls:
-#   raw patch text as toolArgs → backends/copilot/code-preview-diff.sh
+#   raw patch text as toolArgs → bin/hook-entry.sh copilot pre
 #     → nvim_call → lua/code-preview/pre_tool/init.lua
 #     → lua/code-preview/apply/patch.lua
 #     → Neovim diff previews for all files in the patch
 # And the mirror post path:
-#   → backends/copilot/code-close-diff.sh
+#   → bin/hook-entry.sh copilot post
 #     → nvim_call → lua/code-preview/post_tool.lua
 #     → close_for_file for every Update/Add/Delete directive.
 #
 # Distinct from tests/backends/opencode/test_apply_patch.sh, which exercises
 # the patch parser in isolation.
 
-COPILOT_PRE="$REPO_ROOT/backends/copilot/code-preview-diff.sh"
-COPILOT_POST="$REPO_ROOT/backends/copilot/code-close-diff.sh"
+COPILOT_PRE="$REPO_ROOT/bin/hook-entry.sh"
+COPILOT_POST="$REPO_ROOT/bin/hook-entry.sh"
 
 # apply_patch's toolArgs is the raw patch text, not a JSON object. jq will
 # still encode it as a JSON string when we build the outer payload, and the
@@ -29,7 +29,7 @@ run_copilot_pre_patch() {
     '{toolName:"apply_patch", cwd:$cwd, toolArgs:$ta}')
   echo "$payload" | \
     NVIM_LISTEN_ADDRESS="$TEST_SOCKET" \
-    bash "$COPILOT_PRE" 2>/dev/null || true
+    bash "$COPILOT_PRE" copilot pre 2>/dev/null || true
 }
 
 run_copilot_post_patch() {
@@ -41,7 +41,7 @@ run_copilot_post_patch() {
     '{toolName:"apply_patch", cwd:$cwd, toolArgs:$ta}')
   echo "$payload" | \
     NVIM_LISTEN_ADDRESS="$TEST_SOCKET" \
-    bash "$COPILOT_POST" 2>/dev/null || true
+    bash "$COPILOT_POST" copilot post 2>/dev/null || true
 }
 
 # ── Setup ────────────────────────────────────────────────────────

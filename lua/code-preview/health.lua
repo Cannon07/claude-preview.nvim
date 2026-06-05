@@ -170,14 +170,11 @@ function M.check()
     warn("copilot not found in PATH (install from https://github.com/github/copilot-cli)")
   end
 
-  -- Adapter scripts (Unix only — Copilot's Windows shim is pending, issue #46)
-  local copilot_dir = plugin_root .. "/backends/copilot"
+  -- Copilot uses the shared bin/hook-entry.sh (checked above) through its `bash`
+  -- hook field. On Windows that field needs git-bash, so Copilot-on-Windows is
+  -- deferred (issue #46).
   if is_win then
     warn("Copilot CLI on Windows is not yet supported (issue #46); use Claude Code on Windows")
-  else
-    for _, stem in ipairs({ "code-preview-diff", "code-close-diff" }) do
-      check_script(stem .. ".sh", copilot_dir .. "/" .. stem .. ".sh")
-    end
   end
 
   -- hooks.json installed

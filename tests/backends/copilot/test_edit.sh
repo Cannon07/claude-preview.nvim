@@ -2,7 +2,7 @@
 # test_edit.sh — E2E tests for GitHub Copilot CLI edit/create/bash workflows
 #
 # Drives Copilot's native hook payload shape ({toolName, cwd, toolArgs}) through
-# backends/copilot/code-preview-diff.sh (pre) and code-close-diff.sh (post),
+# the generic bin/hook-entry.sh (invoked as `copilot pre` / `copilot post`),
 # then verifies Neovim state via RPC.
 #
 # Copilot quirk: toolArgs is a stringified JSON object for most tools, and the
@@ -10,8 +10,8 @@
 # lua/code-preview/pre_tool/normalisers.lua maps both into the canonical
 # {tool_name, cwd, tool_input} shape consumed by pre_tool.handle().
 
-COPILOT_PRE="$REPO_ROOT/backends/copilot/code-preview-diff.sh"
-COPILOT_POST="$REPO_ROOT/backends/copilot/code-close-diff.sh"
+COPILOT_PRE="$REPO_ROOT/bin/hook-entry.sh"
+COPILOT_POST="$REPO_ROOT/bin/hook-entry.sh"
 
 # Feed a Copilot-shaped payload to the pre-tool adapter.
 #   $1 = toolName, $2 = toolArgs (JSON-encoded string OR raw text for apply_patch)
@@ -26,7 +26,7 @@ run_copilot_pre() {
     '{toolName:$tn, cwd:$cwd, toolArgs:$ta}')
   echo "$payload" | \
     NVIM_LISTEN_ADDRESS="$TEST_SOCKET" \
-    bash "$COPILOT_PRE" 2>/dev/null || true
+    bash "$COPILOT_PRE" copilot pre 2>/dev/null || true
 }
 
 run_copilot_post() {
@@ -40,7 +40,7 @@ run_copilot_post() {
     '{toolName:$tn, cwd:$cwd, toolArgs:$ta}')
   echo "$payload" | \
     NVIM_LISTEN_ADDRESS="$TEST_SOCKET" \
-    bash "$COPILOT_POST" 2>/dev/null || true
+    bash "$COPILOT_POST" copilot post 2>/dev/null || true
 }
 
 # ── Setup ────────────────────────────────────────────────────────
@@ -251,7 +251,7 @@ test_copilot_malformed_payloads_skip() {
   payload=$(jq -n --arg cwd "$TEST_PROJECT_DIR" '{toolName:"edit", cwd:$cwd}')
   echo "$payload" | \
     NVIM_LISTEN_ADDRESS="$TEST_SOCKET" \
-    bash "$COPILOT_PRE" 2>/dev/null || true
+    bash "$COPILOT_PRE" copilot pre 2>/dev/null || true
 
   sleep 0.3
 
