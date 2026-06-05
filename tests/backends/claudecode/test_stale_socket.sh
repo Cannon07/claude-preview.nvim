@@ -124,7 +124,7 @@ EOF
   echo "$payload" | \
     NVIM_LISTEN_ADDRESS= \
     TMPDIR="$hook_tmpdir" \
-    bash "$REPO_ROOT/backends/claudecode/code-preview-diff.sh" >/dev/null 2>&1 || exit_code=$?
+    bash "$REPO_ROOT/bin/hook-entry.sh" claudecode pre >/dev/null 2>&1 || exit_code=$?
 
   # The hook exits 0 on non-crash paths, including when it cannot identify a
   # project-specific nvim instance.

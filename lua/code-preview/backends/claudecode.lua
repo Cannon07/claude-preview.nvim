@@ -17,13 +17,21 @@ local function bin_dir()
   return plugin_root() .. "/bin"
 end
 
--- Path to Claude Code adapter scripts (backends/claudecode/)
-local function scripts_dir()
-  return plugin_root() .. "/backends/claudecode"
-end
+local platform = require("code-preview.platform")
 
-local HOOK_MARKER = "code-preview"
-local LEGACY_HOOK_MARKER = "claude-preview"  -- match old entries during transition
+-- Markers identifying our hook entries. "hook-entry" is the current stem
+-- (bin/hook-entry.{sh,ps1}); "code-preview" / "claude-preview" match older
+-- installs (the per-backend code-preview-diff shim, and the legacy name) so
+-- uninstall still cleans them up after an upgrade.
+local HOOK_MARKERS = { "hook-entry", "code-preview", "claude-preview" }
+
+local function is_our_command(cmd)
+  cmd = tostring(cmd or "")
+  for _, m in ipairs(HOOK_MARKERS) do
+    if cmd:find(m, 1, true) then return true end
+  end
+  return false
+end
 
 -- Tools whose proposals we intercept. On Windows, Claude Code exposes a
 -- distinct `PowerShell` tool alongside `Bash` and routes shell file ops
@@ -34,21 +42,6 @@ local LEGACY_HOOK_MARKER = "claude-preview"  -- match old entries during transit
 -- folds `PowerShell` into the canonical `Bash` path; here we just make sure
 -- the hook fires. Harmless on Unix (no such tool is ever emitted there).
 local TOOL_MATCHER = "Edit|Write|MultiEdit|Bash|PowerShell"
-
--- The hook entry is per-OS (issue #46 / ADR-0007): a .sh shim on Unix, a .ps1
--- shim on Windows invoked through PowerShell. The installer writes the
--- interpreter explicitly into Claude Code's `command` field, since the file is
--- not directly executable on Windows.
-local function script_ext()
-  return vim.fn.has("win32") == 1 and ".ps1" or ".sh"
-end
-
-local function hook_command(script_path)
-  if vim.fn.has("win32") == 1 then
-    return string.format('powershell -NoProfile -ExecutionPolicy Bypass -File "%s"', script_path)
-  end
-  return script_path
-end
 
 local function settings_path()
   return vim.fn.getcwd() .. "/.claude/settings.local.json"
@@ -81,7 +74,7 @@ local function remove_ours(list)
     if entry.hooks and entry.hooks[1] then
       cmd = tostring(entry.hooks[1].command or "")
     end
-    if not (cmd:find(HOOK_MARKER, 1, true) or cmd:find(LEGACY_HOOK_MARKER, 1, true)) then
+    if not is_our_command(cmd) then
       table.insert(filtered, entry)
     end
   end
@@ -89,14 +82,11 @@ local function remove_ours(list)
 end
 
 function M.install()
-  local dir = scripts_dir()
-  local ext = script_ext()
-  local preview = dir .. "/code-preview-diff" .. ext
-  local close   = dir .. "/code-close-diff" .. ext
+  -- One generic shim per OS, parameterized by backend + event (ADR-0008).
+  local hook = bin_dir() .. "/hook-entry" .. platform.script_ext()
 
-  -- Verify scripts exist
-  if vim.fn.filereadable(preview) == 0 then
-    vim.notify("[code-preview] hook script not found: " .. preview, vim.log.levels.ERROR)
+  if vim.fn.filereadable(hook) == 0 then
+    vim.notify("[code-preview] hook script not found: " .. hook, vim.log.levels.ERROR)
     return
   end
 
@@ -111,15 +101,15 @@ function M.install()
   data.hooks.PreToolUse  = remove_ours(data.hooks.PreToolUse)
   data.hooks.PostToolUse = remove_ours(data.hooks.PostToolUse)
 
-  -- Add our entries. On Windows the command invokes PowerShell explicitly
-  -- against the .ps1 shim; on Unix it's the bare .sh path. See ADR-0007.
+  -- The command invokes the shim with the backend + event; on Windows
+  -- platform.hook_command wraps it in `powershell -File …`. See ADR-0007/0008.
   table.insert(data.hooks.PreToolUse, {
     matcher = TOOL_MATCHER,
-    hooks   = { { type = "command", command = hook_command(preview) } },
+    hooks   = { { type = "command", command = platform.hook_command(hook, "claudecode pre") } },
   })
   table.insert(data.hooks.PostToolUse, {
     matcher = TOOL_MATCHER,
-    hooks   = { { type = "command", command = hook_command(close) } },
+    hooks   = { { type = "command", command = platform.hook_command(hook, "claudecode post") } },
   })
 
   write_settings(path, data)
@@ -134,9 +124,7 @@ function M.install_state()
   if not f then return { state = "missing" } end
   local content = f:read("*a") or ""
   f:close()
-  local installed = content:find(HOOK_MARKER, 1, true) ~= nil
-                    or content:find(LEGACY_HOOK_MARKER, 1, true) ~= nil
-  if installed then return { state = "installed" } end
+  if is_our_command(content) then return { state = "installed" } end
   return { state = "missing" }
 end
 

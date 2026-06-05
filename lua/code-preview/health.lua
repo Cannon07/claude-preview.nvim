@@ -9,8 +9,9 @@ function M.check()
   local start = h.start or h.report_start
 
   -- Hook shims are per-OS: .sh on Unix, .ps1 on Windows (issue #46 / ADR-0007).
-  local is_win   = vim.fn.has("win32") == 1
-  local shim_ext = is_win and ".ps1" or ".sh"
+  local platform = require("code-preview.platform")
+  local is_win   = platform.is_windows()
+  local shim_ext = platform.script_ext()
 
   -- Report a shim/script artifact. On Windows there is no executable bit (the
   -- hook command invokes the interpreter explicitly), so readability is the
@@ -72,36 +73,29 @@ function M.check()
   start("Claude Code backend")
 
   -- Hook-shim dependency, reported per-OS. The Unix shims (.sh) parse JSON with
-  -- jq; the Windows shims (.ps1) use PowerShell's native ConvertFrom-Json, so jq
-  -- is irrelevant there. See issue #46.
-  if vim.fn.has("win32") == 1 then
-    if vim.fn.executable("powershell") == 1 then
+  -- jq; the Windows shims (.ps1) use PowerShell's native ConvertFrom-Json. See
+  -- issue #46.
+  local dep = platform.shim_dependency()
+  if vim.fn.executable(dep) == 1 then
+    if is_win then
       ok("PowerShell is available (used by the Windows hook shims; built in on Windows 11)")
     else
-      warn("powershell not found in PATH (required by the Windows hook scripts)")
+      ok("jq is available")
     end
-  elseif vim.fn.executable("jq") == 1 then
-    ok("jq is available")
   else
-    warn("jq not found in PATH (required by the Unix hook scripts)")
+    warn(dep .. " not found in PATH (required by the hook scripts)")
   end
 
-  -- Hook scripts executable
+  -- Shared shims. The hook entry is one generic per-OS shim (bin/hook-entry,
+  -- ADR-0008); the discovery + RPC shims are per-OS too; the apply-* workers
+  -- are Lua on every OS.
   local src = debug.getinfo(1, "S").source
   local lua_file = src:sub(2)
   local lua_dir  = vim.fn.fnamemodify(lua_file, ":h")
   local plugin_root = vim.fn.fnamemodify(lua_dir, ":h:h")
   local bin = plugin_root .. "/bin"
-  local claudecode_dir = plugin_root .. "/backends/claudecode"
 
-  -- Claude Code adapter scripts (per-OS shim extension)
-  for _, stem in ipairs({ "code-preview-diff", "code-close-diff" }) do
-    check_script(stem .. shim_ext, claudecode_dir .. "/" .. stem .. shim_ext)
-  end
-
-  -- Shared scripts: the discovery + RPC shims are per-OS; the apply-* workers
-  -- are Lua on every OS.
-  for _, stem in ipairs({ "nvim-socket", "nvim-call" }) do
+  for _, stem in ipairs({ "hook-entry", "nvim-socket", "nvim-call" }) do
     check_script(stem .. shim_ext, bin .. "/" .. stem .. shim_ext)
   end
   for _, script in ipairs({ "apply-edit.lua", "apply-multi-edit.lua" }) do

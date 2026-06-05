@@ -303,11 +303,11 @@ run_pretool_hook() {
   if [[ "$mode" == "scan" ]]; then
     echo "$json_payload" | \
       NVIM_LISTEN_ADDRESS= \
-      bash "$REPO_ROOT/backends/claudecode/code-preview-diff.sh" 2>/dev/null || true
+      bash "$REPO_ROOT/bin/hook-entry.sh" claudecode pre 2>/dev/null || true
   else
     echo "$json_payload" | \
       NVIM_LISTEN_ADDRESS="$TEST_SOCKET" \
-      bash "$REPO_ROOT/backends/claudecode/code-preview-diff.sh" 2>/dev/null || true
+      bash "$REPO_ROOT/bin/hook-entry.sh" claudecode pre 2>/dev/null || true
   fi
 }
 
@@ -319,10 +319,10 @@ run_posttool_hook() {
   if [[ "$mode" == "scan" ]]; then
     echo "$json_payload" | \
       NVIM_LISTEN_ADDRESS= \
-      bash "$REPO_ROOT/backends/claudecode/code-close-diff.sh" 2>/dev/null || true
+      bash "$REPO_ROOT/bin/hook-entry.sh" claudecode post 2>/dev/null || true
   else
     echo "$json_payload" | \
       NVIM_LISTEN_ADDRESS="$TEST_SOCKET" \
-      bash "$REPO_ROOT/backends/claudecode/code-close-diff.sh" 2>/dev/null || true
+      bash "$REPO_ROOT/bin/hook-entry.sh" claudecode post 2>/dev/null || true
   fi
 }

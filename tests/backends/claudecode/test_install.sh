@@ -24,8 +24,10 @@ test_install_claude_hooks() {
   # Should have PreToolUse and PostToolUse hooks
   assert_contains "$content" "PreToolUse" "should have PreToolUse hook" || return 1
   assert_contains "$content" "PostToolUse" "should have PostToolUse hook" || return 1
-  assert_contains "$content" "code-preview-diff.sh" "should reference diff script" || return 1
-  assert_contains "$content" "code-close-diff.sh" "should reference close script" || return 1
+  # One generic shim per OS, parameterized by backend + event (ADR-0008).
+  assert_contains "$content" "hook-entry.sh" "should reference the generic hook-entry shim" || return 1
+  assert_contains "$content" "claudecode pre" "PreToolUse should pass the pre event" || return 1
+  assert_contains "$content" "claudecode post" "PostToolUse should pass the post event" || return 1
   # PowerShell is matched too: on Windows Claude Code routes shell file ops
   # (Remove-Item / Set-Content …) through a distinct PowerShell tool (issue #46
   # follow-up). The matcher is the same on every OS; the normaliser folds
@@ -51,8 +53,7 @@ test_uninstall_claude_hooks() {
   content="$(cat "$settings_file")"
 
   # Hook entries should be removed (empty arrays)
-  assert_not_contains "$content" "code-preview-diff.sh" "diff script should be removed" || return 1
-  assert_not_contains "$content" "code-close-diff.sh" "close script should be removed" || return 1
+  assert_not_contains "$content" "hook-entry.sh" "hook-entry shim should be removed" || return 1
 }
 
 # ── Test: Install is idempotent (no duplicates) ─────────────────
@@ -66,9 +67,9 @@ test_install_idempotent() {
   local content
   content="$(cat "$settings_file")"
 
-  # Count occurrences of the diff script — should be exactly 1
+  # Count PreToolUse entries (the pre event) — should be exactly 1.
   local count
-  count="$(echo "$content" | grep -o "code-preview-diff.sh" | wc -l | tr -d ' ')"
+  count="$(echo "$content" | grep -o "claudecode pre" | wc -l | tr -d ' ')"
   assert_eq "1" "$count" "should have exactly one PreToolUse hook entry" || return 1
 }
 
@@ -98,7 +99,7 @@ JSON
   assert_contains "$content" "permissions" "existing permissions should be preserved" || return 1
   assert_contains "$content" "echo read" "existing hook should be preserved" || return 1
   # Our hooks should also be present
-  assert_contains "$content" "code-preview-diff.sh" "our hooks should be added" || return 1
+  assert_contains "$content" "hook-entry.sh" "our hooks should be added" || return 1
 }
 
 # ── Run all tests ────────────────────────────────────────────────
