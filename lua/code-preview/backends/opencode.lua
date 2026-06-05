@@ -10,6 +10,8 @@ local function plugin_root()
   return vim.fn.fnamemodify(lua_dir, ":h:h:h")
 end
 
+local platform = require("code-preview.platform")
+
 local function plugin_source_dir()
   return plugin_root() .. "/backends/opencode"
 end
@@ -30,20 +32,20 @@ function M.install()
   local target = opencode_target_dir()
   vim.fn.mkdir(target, "p")
 
-  -- Copy plugin files
+  -- Copy plugin files. Portable copy (libuv) rather than `cp`, which is absent
+  -- on Windows (issue #46).
+  local uv = vim.uv or vim.loop
   local files = { "index.ts", "package.json", "tsconfig.json" }
   for _, file in ipairs(files) do
     local src_path = source .. "/" .. file
     local dst_path = target .. "/" .. file
     if vim.fn.filereadable(src_path) == 1 then
-      vim.fn.system({ "cp", src_path, dst_path })
+      uv.fs_copyfile(src_path, dst_path)
     end
   end
 
-  -- Write bin-path.txt pointing at the plugin root. The TS plugin derives
-  -- both backends/opencode/ (shim location) and bin/ (legacy callers) from
-  -- this single path. Historically this file pointed at bin/ directly; the
-  -- TS side keeps a transitional fallback for that legacy value.
+  -- Write bin-path.txt pointing at the plugin root; the TS plugin resolves
+  -- bin/hook-entry.{sh,ps1} relative to it.
   local bin_path_file = target .. "/bin-path.txt"
   local bf = io.open(bin_path_file, "w")
   if bf then
@@ -51,18 +53,9 @@ function M.install()
     bf:close()
   end
 
-  -- Ensure shim scripts are executable in-tree. The TS plugin execSyncs them
-  -- directly from <plugin_root>/backends/opencode/. No-op on Windows: the
-  -- permissions model differs and bash isn't the end-state for opencode-on-
-  -- Windows anyway (see ADR-0006). #46 will resolve the Windows story.
-  if vim.fn.has("unix") == 1 then
-    for _, script in ipairs({ "code-preview-diff.sh", "code-close-diff.sh" }) do
-      local script_path = source .. "/" .. script
-      if vim.fn.filereadable(script_path) == 1 then
-        vim.fn.system({ "chmod", "+x", script_path })
-      end
-    end
-  end
+  -- The TS plugin execSyncs the shared bin/hook-entry shim; ensure it's
+  -- executable on Unix (no-op on Windows). See ADR-0008.
+  platform.make_executable(plugin_root() .. "/bin/hook-entry.sh")
 
   vim.notify("[code-preview] OpenCode plugin installed → " .. target, vim.log.levels.INFO)
 end
