@@ -17,7 +17,7 @@ The directory `backends/` and the env var `CODE_PREVIEW_BACKEND` are historical 
 The per-agent adapter that translates that agent's hook format into the plugin's normalised core. One integration per agent. Each integration has two parts:
 
 - **Installer** (`lua/code-preview/backends/<agent>.lua`) — wires the agent's config files (e.g. `.claude/settings.local.json`, `.opencode/plugins/index.ts`) to point at the plugin's hook scripts.
-- **Hook entry** (`backends/<agent>/code-{preview,close}-diff.sh`) — see [Hook entry](#hook-entry).
+- **Hook entry** (`bin/hook-entry.{sh,ps1}`, one generic shim per OS) — see [Hook entry](#hook-entry).
 
 When a doc or issue says "the Codex integration," it means the installer + adapter scripts for Codex — never the running Codex CLI itself.
 
@@ -73,9 +73,11 @@ The pidfile is *one of several* socket discovery paths, not a synonym for socket
 
 ## Hook entry
 
-The per-agent script the agent invokes directly when it's about to (or has just) used an editing tool. One pair per [integration](#integration): `code-preview-diff.sh` for pre-tool, `code-close-diff.sh` for post-tool. Lives in `backends/<agent>/`.
+The script the agent invokes directly when it's about to (or has just) used an editing tool. **One generic shim per OS, shared by all agents** ([ADR-0008](docs/adr/0008-one-hook-entry-per-os.md)): `bin/hook-entry.sh` on Unix and `bin/hook-entry.ps1` on Windows, invoked as `hook-entry <backend> <pre|post>`. (Before the consolidation each agent had its own `backends/<agent>/code-{preview,close}-diff.{sh,ps1}` pair.)
 
-Job: take the agent's native hook payload, normalise it into the shape the [core handler](#core-handler) expects (`{tool_name, cwd, tool_input}`), then hand off. The hook entry is **per-OS**: a `.sh` shim on Unix, a PowerShell `.ps1` shim on Windows (issue #46). PowerShell is the single Windows logic language across all agents — it is the only stock-Windows-11 tool that parses JSON natively, enumerates named pipes, and probes the RPC socket. The installer writes the interpreter explicitly into the agent's `command` field (`powershell -NoProfile -ExecutionPolicy Bypass -File <path>.ps1`); a thin `.cmd` trampoline is added only for an agent that raw-execs a bare path and rejects a multi-token command. Windows PowerShell 5.1 (`powershell.exe`) is the floor, not pwsh 7.
+Job: take the agent's native hook payload, optionally fast-path-filter noisy tools (a backend-keyed branch inside the shim; the [normalisers](#core-handler) tool map is the source of truth), discover the running Neovim, splice the payload + backend name, and make one [RPC](#rpc) into the [core handler](#core-handler).
+
+The hook entry is **per-OS** because that is a language boundary: a `.sh` shim on Unix, a PowerShell `.ps1` shim on Windows (issue #46). PowerShell is the single Windows logic language — the only stock-Windows-11 tool that parses JSON natively, enumerates named pipes, and probes the RPC socket; Windows PowerShell 5.1 (`powershell.exe`) is the floor, not pwsh 7. The installer writes the interpreter explicitly into the agent's `command` field (`powershell -NoProfile -ExecutionPolicy Bypass -File <path>\hook-entry.ps1 <backend> <event>`) via [`platform.hook_command`](docs/adr/0008-one-hook-entry-per-os.md). Copilot is the exception: its config uses a `bash` field, so it always invokes `hook-entry.sh` (Copilot-on-Windows would need git-bash, deferred).
 
 ## Core handler
 
