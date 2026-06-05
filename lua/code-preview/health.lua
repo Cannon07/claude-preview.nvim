@@ -102,42 +102,19 @@ function M.check()
     check_script(script, bin .. "/" .. script)
   end
 
-  -- .claude/settings.local.json
+  -- .claude/settings.local.json — delegate hook detection to the backend, which
+  -- matches by command *shape* (the "hook-entry" marker), not by install path.
+  -- (A previous inline re-parse keyed off "code-preview"/"claude-preview"
+  -- substrings, which mis-fired after the hook-entry rename — e.g. flagging a
+  -- fresh install as "legacy" just because the plugin lived under a
+  -- claude-preview.nvim directory.)
   local settings = vim.fn.getcwd() .. "/.claude/settings.local.json"
-  local f = io.open(settings, "r")
-  if not f then
+  if vim.fn.filereadable(settings) == 0 then
     warn(".claude/settings.local.json not found — run :CodePreviewInstallClaudeCodeHooks")
+  elseif require("code-preview.backends.claudecode").install_state().state == "installed" then
+    ok("Claude Code hooks are installed")
   else
-    local raw = f:read("*a")
-    f:close()
-    local parsed_ok, data = pcall(vim.json.decode, raw)
-    if not parsed_ok then
-      error(".claude/settings.local.json is invalid JSON")
-    elseif not (data.hooks and data.hooks.PreToolUse) then
-      warn(".claude/settings.local.json exists but code-preview hooks are not installed")
-    else
-      local found_new = false
-      local found_legacy = false
-      for _, entry in ipairs(data.hooks.PreToolUse) do
-        local cmd = ""
-        if entry.hooks and entry.hooks[1] then
-          cmd = tostring(entry.hooks[1].command or "")
-        end
-        if cmd:find("code-preview", 1, true) then
-          found_new = true
-          break
-        elseif cmd:find("claude-preview", 1, true) then
-          found_legacy = true
-        end
-      end
-      if found_new then
-        ok("Claude Code hooks are installed")
-      elseif found_legacy then
-        warn("Legacy claude-preview hooks detected — run :CodePreviewInstallClaudeCodeHooks to update")
-      else
-        warn("code-preview hooks not found — run :CodePreviewInstallClaudeCodeHooks")
-      end
-    end
+    warn("code-preview hooks not installed in .claude/settings.local.json — run :CodePreviewInstallClaudeCodeHooks")
   end
 
   -- ── OpenCode backend ──────────────────────────────────────────

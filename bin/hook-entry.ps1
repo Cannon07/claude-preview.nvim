@@ -9,7 +9,9 @@
 # tools, discovers the running Neovim (named pipe), and makes a single RPC into
 # the in-process orchestrator. Abstains (exit 0, no stdout) on any failure.
 
-param([string]$Backend, [string]$Event)
+# $HookEvent, not $Event: $Event is a PowerShell automatic variable (eventing
+# subsystem). Harmless here, but renamed to avoid the foot-gun.
+param([string]$Backend, [string]$HookEvent)
 
 try {
   $raw = [Console]::In.ReadToEnd()
@@ -48,7 +50,7 @@ try {
   # Verbatim splice of the raw payload into [payload, backend].
   $argsJson = "[$raw,""$Backend""]"
 
-  if ($Event -eq 'post') {
+  if ($HookEvent -eq 'post') {
     $null = Invoke-NvimCall -Server $socket -Module 'code-preview.post_tool' `
                             -Function 'handle' -ArgsJson $argsJson
   } else {
