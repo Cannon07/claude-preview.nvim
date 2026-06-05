@@ -323,6 +323,127 @@ local function detect_sed_i(cmd)
   return out
 end
 
+-- ── In-place file editors: perl / ruby / awk ─────────────────────
+--
+-- Like `sed -i`, these rewrite their trailing file(s) in place (Tier-1
+-- indicator only, no diff). They get their own quote-aware path rather than a
+-- redirect/`each_subcommand`-style scan because an in-place script routinely
+-- contains `;` and `|` (`perl -pi -e 's/a/b/; s/c/d/'`) that the char-walk
+-- scanners would mis-cut. We require the in-place flag so read-only one-liners
+-- (`perl -ne 'print' f`, `awk '{print}' f`) are never flagged.
+
+-- Quote-aware POSIX tokeniser. Single/double-quoted regions span whitespace and
+-- separators and stay attached to their word, so a quoted script is one token.
+-- Shell separators (; | || & &&) are emitted as their own tokens so the caller
+-- can split into command segments without being fooled by quotes.
+local function posix_tokenise(s)
+  local toks, i, n = {}, 1, #s
+  while i <= n do
+    local c = s:sub(i, i)
+    if c == "\n" or c == "\r" then
+      toks[#toks + 1] = ";"; i = i + 1   -- newline is a command separator
+    elseif c:match("%s") then
+      i = i + 1
+    elseif c == ";" then
+      toks[#toks + 1] = ";"; i = i + 1
+    elseif c == "|" then
+      if s:sub(i + 1, i + 1) == "|" then toks[#toks + 1] = "||"; i = i + 2
+      else toks[#toks + 1] = "|"; i = i + 1 end
+    elseif c == "&" then
+      if s:sub(i + 1, i + 1) == "&" then toks[#toks + 1] = "&&"; i = i + 2
+      else toks[#toks + 1] = "&"; i = i + 1 end
+    else
+      local start = i
+      while i <= n do
+        local ch = s:sub(i, i)
+        if ch == "'" or ch == '"' then
+          local q = ch; i = i + 1
+          while i <= n and s:sub(i, i) ~= q do i = i + 1 end
+          i = i + 1  -- past the closing quote (or end of string)
+        elseif ch:match("%s") or ch == ";" or ch == "|" or ch == "&" then
+          break
+        else
+          i = i + 1
+        end
+      end
+      toks[#toks + 1] = s:sub(start, i - 1)
+    end
+  end
+  return toks
+end
+
+local INPLACE_SEPARATORS = { [";"] = true, ["|"] = true, ["||"] = true, ["&"] = true, ["&&"] = true }
+
+-- A perl/ruby in-place flag: `-i`, a switch cluster containing `i` (`-pi`,
+-- `-0pi`, `-ni`, `-pie`), or `-i.bak`. Excludes `-M<module>` (module names may
+-- contain an "i").
+local function is_perl_inplace_flag(t)
+  if t:match("^%-M") then return false end
+  if t:match("^%-i%.%w+$") then return true end       -- -i.bak
+  return t:match("^%-%w*i%w*$") ~= nil                 -- -i / -pi / -0pi / -pie
+end
+
+local function basename(t) return (t:gsub(".*[/\\]", "")) end
+
+-- File targets for one separator-free command segment.
+local function inplace_targets(seg)
+  local idx = 1
+  if seg[idx] == "sudo" then idx = idx + 1 end
+  local exe = basename(seg[idx] or "")
+
+  if exe == "perl" or exe == "ruby" then
+    -- The `-e`/`-E` switch may be bundled (`-pe`, `-pie`); detect any flag
+    -- cluster ending in e/E, and the in-place flag anywhere in the segment.
+    local has_inplace, script_idx = false, nil
+    for j = idx + 1, #seg do
+      local t = seg[j]
+      if not script_idx and t:match("^%-%w*[eE]$") and not t:match("^%-M") then
+        script_idx = j
+      end
+      if is_perl_inplace_flag(t) then has_inplace = true end
+    end
+    if not (has_inplace and script_idx) then return {} end
+    local files = {}
+    for j = script_idx + 2, #seg do            -- skip the -e flag and its script
+      if not seg[j]:match("^%-") then files[#files + 1] = seg[j] end
+    end
+    return files
+
+  elseif exe == "awk" or exe == "gawk" then
+    -- gawk in-place mode is `-i inplace`; the first positional after it is the
+    -- awk program, the rest are files.
+    local inplace_at
+    for j = idx + 1, #seg - 1 do
+      if seg[j] == "-i" and seg[j + 1] == "inplace" then inplace_at = j + 1; break end
+    end
+    if not inplace_at then return {} end
+    local files, seen_program = {}, false
+    for j = inplace_at + 1, #seg do
+      local t = seg[j]
+      if t:match("^%-") then            -- skip flags (-F, -v, …)
+      elseif not seen_program then seen_program = true   -- the awk program
+      else files[#files + 1] = t end
+    end
+    return files
+  end
+  return {}
+end
+
+local function detect_inplace_edit(cmd)
+  local out, seg = {}, {}
+  local function flush()
+    if #seg > 0 then
+      for _, f in ipairs(inplace_targets(seg)) do out[#out + 1] = f end
+    end
+    seg = {}
+  end
+  for _, t in ipairs(posix_tokenise(cmd)) do
+    if INPLACE_SEPARATORS[t] then flush() else seg[#seg + 1] = t end
+  end
+  flush()
+  return out
+end
+
 -- ── PowerShell command grammar ───────────────────────────────────
 --
 -- PowerShell cmdlets are PascalCase Verb-Noun (`Remove-Item`) with aliases
@@ -580,6 +701,7 @@ function M.detect_write_paths(cmd, cwd)
   for _, p in ipairs(detect_mv_cp(cmd))     do raw[#raw + 1] = p end
   for _, p in ipairs(detect_tee(cmd))       do raw[#raw + 1] = p end
   for _, p in ipairs(detect_sed_i(cmd))     do raw[#raw + 1] = p end
+  for _, p in ipairs(detect_inplace_edit(cmd)) do raw[#raw + 1] = p end
   -- PowerShell write / move / copy targets (raw tokens).
   for _, sub in ipairs(each_subcommand(cmd)) do
     local _, ps_write = detect_ps(sub)

@@ -117,7 +117,7 @@ Origin prefixes exist because some agents (observed with GPT-class models in Cod
 
 Two levels of fidelity for handling `Bash` proposals.
 
-- **Tier 1** — *implemented today.* Static regex parsing of the shell command for redirections (`>`, `>>`), atomic-replace (`mv X.tmp X`), `cp`, `tee`, and `sed -i` targets. Sets a [change](#change) with a `bash_*` [origin prefix](#origin-prefix); does **not** open a [preview](#preview). The user sees the file was touched via the neo-tree [indicator](#indicator) but reviews the actual content via their normal diff workflow after the fact.
+- **Tier 1** — *implemented today.* Static parsing of the shell command for redirections (`>`, `>>`), atomic-replace (`mv X.tmp X`), `cp`, `tee`, `sed -i`, and other in-place editors (`perl -i`, `ruby -i`, `gawk -i inplace`) targets — plus PowerShell equivalents on Windows (`Remove-Item`, `Set-Content`, `Out-File`, `Move-Item`, `Copy-Item`). Implemented in `pre_tool/shell_detect.lua`. Sets a [change](#change) with a `bash_*` [origin prefix](#origin-prefix); does **not** open a [preview](#preview). The user sees the file was touched via the neo-tree [indicator](#indicator) but reviews the actual content via their normal diff workflow after the fact.
 - **Tier 2** — *not implemented.* Would compute and display real content diffs for shell-writes. Open design question; sandboxing was rejected (see [ADR-0001](docs/adr/0001-origin-prefixed-status-values.md)). The name exists so deferred work has a label, not a commitment.
 
 ## Source path / File path / Display path

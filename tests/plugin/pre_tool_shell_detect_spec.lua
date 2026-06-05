@@ -89,6 +89,37 @@ describe("shell_detect.detect_write_paths (POSIX)", function()
   end
 end)
 
+-- In-place editors (perl/ruby/awk) — write the trailing file(s) in place, like
+-- sed -i. Require the in-place flag so read-only one-liners aren't flagged.
+describe("shell_detect.detect_write_paths (in-place editors)", function()
+  local cases = {
+    -- The real codex sample: -0pi cluster, multi-statement substitution.
+    { name = "perl -0pi real sample", cmd = [[perl -0pi -e 's/(<!-- a -->\n)/$1<!-- b -->\n/' README.md]], expect = { CWD .. "/README.md" } },
+    { name = "perl -pi -e",           cmd = "perl -pi -e 's/a/b/' foo.txt",        expect = { CWD .. "/foo.txt" } },
+    { name = "perl -i.bak backup",    cmd = "perl -i.bak -pe 's/a/b/' foo.txt",    expect = { CWD .. "/foo.txt" } },
+    { name = "perl -pie bundled e",   cmd = "perl -pie 's/a/b/' foo.txt",          expect = { CWD .. "/foo.txt" } },
+    -- `;` inside the single-quoted script must not split the command.
+    { name = "perl multi-statement",  cmd = "perl -pi -e 's/a/b/; s/c/d/' foo.txt", expect = { CWD .. "/foo.txt" } },
+    { name = "perl multiple files",   cmd = "perl -pi -e 's/a/b/' a.txt b.txt",    expect = { CWD .. "/a.txt", CWD .. "/b.txt" } },
+    { name = "perl absolute target",  cmd = "perl -pi -e 's/a/b/' /etc/hosts",     expect = { "/etc/hosts" } },
+    { name = "sudo perl",             cmd = "sudo perl -pi -e 's/a/b/' /etc/hosts", expect = { "/etc/hosts" } },
+    -- Segment splitting: the cd is a separate command; only perl writes.
+    { name = "perl after && chain",   cmd = "cd sub && perl -pi -e 's/a/b/' f.txt", expect = { CWD .. "/f.txt" } },
+    { name = "ruby -i -pe",           cmd = [[ruby -i -pe 'gsub(/a/,"b")' foo.txt]], expect = { CWD .. "/foo.txt" } },
+    { name = "gawk -i inplace",       cmd = "gawk -i inplace '{print}' data.txt",  expect = { CWD .. "/data.txt" } },
+    -- Negatives: no in-place flag → read-only → nothing flagged.
+    { name = "perl read-only -ne",    cmd = "perl -ne 'print' foo.txt",            expect = {} },
+    { name = "awk read-only",         cmd = "awk '{print}' data.txt",              expect = {} },
+    { name = "perl -e no file",       cmd = "perl -e 'print 1'",                   expect = {} },
+  }
+  for _, c in ipairs(cases) do
+    it(c.name, function()
+      if IS_WIN then return pending("POSIX path semantics: Unix-only") end
+      assert.are.same(sorted(c.expect), sorted(shell_detect.detect_write_paths(c.cmd, CWD)))
+    end)
+  end
+end)
+
 describe("shell_detect.detect combined (POSIX)", function()
   it("returns both rm and write paths", function()
     if IS_WIN then return pending("POSIX path semantics: Unix-only") end
