@@ -95,6 +95,31 @@ local function read_file_lines(path)
   return lines
 end
 
+-- Force the terminal to repaint after an RPC-driven tab/window change.
+--
+-- show_diff runs inside a `nvim --remote-expr` call from the hook shim, so the
+-- new diff tab exists in Neovim's state immediately but the TUI isn't repainted
+-- until the event loop next wakes. A deferred `redraw!` covers most hosts.
+--
+-- The Windows legacy console (cmd.exe / conhost) is the exception: it does NOT
+-- flush a timer-driven `redraw!` issued from an idle --remote-expr, so the diff
+-- only paints on the next event (the user's next edit) — neo-tree, which forces
+-- its own redraw, updates meanwhile, producing the "marking shows but diff
+-- doesn't" symptom. nvim__redraw({flush=true}) pushes the grid to the UI on the
+-- spot, and the <Ignore> feedkeys nudge wakes the input loop so conhost delivers
+-- it. Both are pcall'd: __redraw is 0.10+ and semi-private. The win32 guard keeps
+-- every other platform on the exact prior behaviour.
+local function force_redraw()
+  vim.fn.timer_start(10, function()
+    vim.cmd("redraw!")
+    if vim.fn.has("win32") == 1 then
+      pcall(vim.api.nvim__redraw, { flush = true })
+      pcall(vim.api.nvim_feedkeys,
+        vim.api.nvim_replace_termcodes("<Ignore>", true, false, true), "n", false)
+    end
+  end)
+end
+
 --- Count how many active diffs are currently open.
 local function active_count()
   local n = 0
@@ -412,8 +437,8 @@ function M.show_diff(original_path, proposed_path, real_file_path, abs_file_path
   if cfg.diff.layout == "inline" then
     local result = show_inline_diff(original_path, proposed_path, real_file_path, cfg)
     active_diffs[file_key] = result
-    -- Force terminal redraw via timer so RPC-triggered tab creation is visible
-    vim.fn.timer_start(10, function() vim.cmd("redraw!") end)
+    -- Force terminal redraw so RPC-triggered tab creation is visible (see force_redraw).
+    force_redraw()
     return
   end
 
@@ -498,7 +523,7 @@ function M.show_diff(original_path, proposed_path, real_file_path, abs_file_path
 
   vim.cmd("normal! ]c")
 
-  vim.fn.timer_start(10, function() vim.cmd("redraw!") end)
+  force_redraw()
 end
 
 --- Close the diff for a specific file and clean up its resources.
