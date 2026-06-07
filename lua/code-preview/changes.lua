@@ -19,8 +19,11 @@ local function normalize(filepath)
   local p = vim.fn.fnamemodify(filepath, ":p")
   if package.config:sub(1, 1) == "\\" then
     p = p:gsub("/", "\\")
+    return (p:gsub("\\$", ""))   -- Windows: separators folded above; strip trailing "\"
   end
-  return (p:gsub("[/\\]$", ""))
+  -- Unix: byte-identical to the pre-Windows behaviour. Strip "/" only — a
+  -- trailing backslash is a legal Unix filename character, not a separator.
+  return (p:gsub("/$", ""))
 end
 
 function M.set(filepath, status)
