@@ -10,6 +10,9 @@
 # Copilot CLI local hooks (installed by :CodePreviewInstallCopilotCliHooks)
 .github/hooks/code-preview.json
 
+# Codex CLI local hooks (installed by :CodePreviewInstallCodexCliHooks)
+.codex/
+
 # Test dependencies (plenary.nvim, installed by tests/run_lua.sh)
 deps/
 

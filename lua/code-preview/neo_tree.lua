@@ -51,9 +51,13 @@ local function resolve_status(lookup, node_path)
   if status then
     return status
   end
-  -- Check if any ancestor directory is marked as deleted
+  -- Check if any ancestor directory is marked as deleted. Use the OS-native
+  -- separator: registry keys are canonicalized to native separators (see
+  -- changes.normalize), and on Windows neo-tree's node_path is backslashed, so a
+  -- hardcoded "/" here would never match.
+  local sep = package.config:sub(1, 1)
   for path, s in pairs(lookup) do
-    if s == "deleted" and vim.startswith(node_path, path .. "/") then
+    if s == "deleted" and vim.startswith(node_path, path .. sep) then
       return "deleted"
     end
   end

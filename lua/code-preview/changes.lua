@@ -4,10 +4,23 @@ local M = {}
 -- Pure Lua key-value store, no external dependencies
 local pending = {}
 
--- Normalize path: make absolute and strip trailing slash
+-- Normalize path: make absolute, canonicalize separators, strip trailing slash.
+--
+-- Separator canonicalization is load-bearing on Windows: neo-tree keys its tree
+-- nodes by native (backslash) paths, and the BEFORE_RENDER handler looks our
+-- status up by `node.path`. Backends that build a file path by joining cwd with
+-- a relative patch/tool path (codex/opencode `apply_patch`, opencode/copilot
+-- Edit) produce mixed separators like `D:\proj\sub/file.txt`, which never
+-- compare equal to neo-tree's `D:\proj\sub\file.txt` — so the diff opens but the
+-- tree marker is silently dropped. Folding to the OS-native separator makes the
+-- registry key match. No-op on Unix (sep is "/"), and a no-op for the already
+-- native backslash paths Claude Code sends.
 local function normalize(filepath)
   local p = vim.fn.fnamemodify(filepath, ":p")
-  return (p:gsub("/$", ""))
+  if package.config:sub(1, 1) == "\\" then
+    p = p:gsub("/", "\\")
+  end
+  return (p:gsub("[/\\]$", ""))
 end
 
 function M.set(filepath, status)

@@ -47,4 +47,26 @@ describe("changes registry", function()
     changes.set("/tmp/y.lua", "created")
     assert.equals(2, vim.tbl_count(changes.get_all()))
   end)
+
+  -- Regression: codex/opencode apply_patch build a file path by joining a
+  -- backslashed cwd with a forward-slashed relative path, so on Windows the
+  -- path arrives with mixed separators (D:\proj\sub/file.txt). The registry
+  -- must fold to the OS-native separator, otherwise the key never matches
+  -- neo-tree's native-backslash node.path and the tree marker is silently
+  -- dropped (the diff still opens). Asserted only on Windows: on Unix a
+  -- backslash is a valid filename character, not a separator, so there is no
+  -- mixed-separator case to canonicalize.
+  it("canonicalizes mixed path separators to native (Windows)", function()
+    if package.config:sub(1, 1) ~= "\\" then
+      return -- separator canonicalization only applies on Windows
+    end
+    changes.set([[D:\proj\sub/file.txt]], "modified")
+
+    local all = changes.get_all()
+    local key = next(all)
+    assert.equals("modified", all[key])
+    assert.is_nil(key:find("/", 1, true)) -- stored key has no forward slashes
+    -- a fully-native lookup (what neo-tree passes) hits the same entry
+    assert.equals("modified", changes.get([[D:\proj\sub\file.txt]]))
+  end)
 end)
