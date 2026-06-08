@@ -84,6 +84,34 @@ describe("post_tool.handle (ApplyPatch)", function()
 
     assert.are.same({ "/proj/a.txt", "/proj/b.txt" }, closed)
   end)
+
+  it("does not double cwd onto a Windows-absolute patch path", function()
+    -- Regression: post_tool used a private path resolver whose absolute check
+    -- was Unix-only, so a Windows-absolute `*** Update File:` path (codex sends
+    -- these for some projects) was joined onto cwd and doubled
+    -- (D:\proj\D:\proj\sub\README.md). The close path then no longer matched
+    -- the open diff, so the marker/diff never cleared after accept. post_tool
+    -- now shares apply.patch.resolve_path, so the absolute path passes through.
+    -- Cross-platform: the drive-letter check matches on Unix too.
+    local diff = require("code-preview.diff")
+    local closed = {}
+    local orig = diff.close_for_file
+    diff.close_for_file = function(p) table.insert(closed, p) end
+
+    local abs = [[D:\proj\sub\README.md]]
+    local patch = table.concat({
+      "*** Begin Patch",
+      "*** Update File: " .. abs,
+      "@@",
+      "-old",
+      "+new",
+      "*** End Patch",
+    }, "\n")
+    post_tool.handle(payload("ApplyPatch", { patch_text = patch }, [[D:\proj]]), "claudecode")
+    diff.close_for_file = orig
+
+    assert.are.same({ abs }, closed)
+  end)
 end)
 
 describe("post_tool.handle (robustness)", function()

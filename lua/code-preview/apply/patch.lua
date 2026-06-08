@@ -197,4 +197,10 @@ function M.parse(patch_text, cwd)
   return results
 end
 
+-- Exposed so the PostToolUse handler resolves a patch's file path identically to
+-- the PreToolUse open path. A separate copy of this join in post_tool was what
+-- let the Windows-absolute doubling be fixed on open but not on close (the diff
+-- opened under the clean path but post tried to close a doubled one).
+M.resolve_path = resolve_path
+
 return M

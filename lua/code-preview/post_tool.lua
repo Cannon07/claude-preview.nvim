@@ -16,6 +16,7 @@ local changes     = require("code-preview.changes")
 local neo_tree    = require("code-preview.neo_tree")
 local diff        = require("code-preview.diff")
 local log         = require("code-preview.log")
+local apply_patch = require("code-preview.apply.patch")
 
 -- Extract paths from both unified-diff (+++ lines) and custom-patch
 -- (*** Update/Add/Delete File:) formats.
@@ -36,14 +37,13 @@ local function patch_paths(patch_text, cwd)
       table.insert(paths, (custom:gsub("%s+$", "")))
     end
   end
-  -- Resolve relative paths against cwd.
+  -- Resolve relative paths against cwd. Reuse apply.patch.resolve_path so the
+  -- close path matches the open path exactly — including Windows-absolute
+  -- handling (a private copy here is what previously doubled cwd onto an
+  -- already-absolute path, so close never matched the open diff).
   local out = {}
   for _, p in ipairs(paths) do
-    if p:sub(1, 1) ~= "/" and cwd and cwd ~= "" then
-      table.insert(out, cwd .. "/" .. p)
-    else
-      table.insert(out, p)
-    end
+    table.insert(out, apply_patch.resolve_path(p, cwd or ""))
   end
   return out
 end
