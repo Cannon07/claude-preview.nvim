@@ -246,7 +246,11 @@ local function handle_apply_patch(input, cfg)
 
     if should_show(cfg, file.path) then
       log.info(log.fmt("pre_tool: ApplyPatch send %s action=%s", file.rel_path, file.action))
-      diff.show_diff(orig, prop, file.rel_path, file.path, file.action)
+      -- Label from the resolved absolute path, not file.rel_path: rel_path is
+      -- whatever the model wrote in the `*** Update File:` directive, and some
+      -- codex models (e.g. GPT 5.3) write an absolute path there, which would
+      -- render the tab as `D:\...` instead of a cwd-relative label.
+      diff.show_diff(orig, prop, display_path(file.path, input.cwd), file.path, file.action)
     else
       log.info(log.fmt("pre_tool: ApplyPatch skip %s (visible_only)", file.rel_path))
     end
