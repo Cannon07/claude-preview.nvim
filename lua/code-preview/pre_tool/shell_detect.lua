@@ -599,6 +599,16 @@ local PS_MOVE = {
 local PS_COPY = {
   ["copy-item"] = true, cpi = true, copy = true,
 }
+-- New-Item creates a filesystem entry. `-ItemType File` (and other non-directory
+-- types) makes a new file — codex/GPT routinely creates files this way — so we
+-- treat it as a write and the brand-new path lands as `bash_created`, mirroring
+-- how Out-File / Set-Content already mark a write to a not-yet-existing file.
+-- `-ItemType Directory` is mkdir and is deliberately NOT flagged (parity with
+-- POSIX mkdir/touch staying unhandled, and the locked spec row
+-- `New-Item -ItemType Directory … | Out-Null → {}`). Handled in detect_ps.
+local PS_CREATE = {
+  ["new-item"] = true, ni = true,
+}
 
 -- Pull the path value(s) for a category out of parsed args. `named_keys` lists
 -- the value-params to check in priority order; `pos_index` is the positional
@@ -621,6 +631,7 @@ local function detect_ps(subcmd)
   local category
   if PS_DELETE[key] then category = "delete"
   elseif PS_WRITE[key] then category = "write"
+  elseif PS_CREATE[key] then category = "create"
   elseif PS_MOVE[key] then category = "move"
   elseif PS_COPY[key] then category = "copy"
   else return {}, {} end
@@ -644,6 +655,14 @@ local function detect_ps(subcmd)
   elseif category == "write" then
     -- Out-File uses -FilePath; Set/Add-Content use -Path; positional 1 either way.
     write_raw = ps_targets(named, positional, { "path", "literalpath", "filepath" }, 1)
+  elseif category == "create" then
+    -- New-Item: flag file creation, skip directory creation (mkdir). The path is
+    -- -Path/-LiteralPath or positional 1. itemtype is unquoted before the check
+    -- so `-ItemType "Directory"` is also recognised.
+    local itemtype = (named["itemtype"] or ""):gsub('["\']', ""):lower()
+    if itemtype ~= "directory" then
+      write_raw = ps_targets(named, positional, { "path", "literalpath" }, 1)
+    end
   else -- move / copy → the destination is the write target
     write_raw = ps_targets(named, positional, { "destination", "newname" }, 2)
   end

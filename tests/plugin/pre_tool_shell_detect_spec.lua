@@ -183,8 +183,14 @@ describe("shell_detect.detect_write_paths (Windows)", function()
     { name = "Copy-Item destination",       cmd = [[Copy-Item -Path ".step0\a" -Destination ".step0\c.txt" -Force]], expect = { [[C:\proj\.step0\c.txt]] } },
     { name = "Move-Item windows-abs dest",  cmd = [[Move-Item -Path "a" -Destination "D:\dst\b.txt"]], expect = { [[D:\dst\b.txt]] } },
     { name = "UNC destination",             cmd = [[Set-Content -Path "\\srv\share\f.txt" -Value x]], expect = { [[\\srv\share\f.txt]] } },
+    -- New-Item file creation → flagged as a write (becomes bash_created downstream).
+    { name = "New-Item -ItemType File -Path", cmd = [[New-Item -ItemType File -Path 'temp1.txt' -Force]], expect = { [[C:\proj\temp1.txt]] } },
+    { name = "New-Item File positional",    cmd = [[New-Item "bare.txt" -ItemType File]], expect = { [[C:\proj\bare.txt]] } },
+    { name = "ni alias File",               cmd = [[ni -ItemType File -Path "sub\made.txt"]], expect = { [[C:\proj\sub\made.txt]] } },
+    { name = "New-Item two files ;|Out-Null", cmd = [[New-Item -ItemType File -Path 'temp1.txt' -Force | Out-Null; New-Item -ItemType File -Path 'shareApplication\temp2.txt' -Force | Out-Null]], expect = { [[C:\proj\temp1.txt]], [[C:\proj\shareApplication\temp2.txt]] } },
     -- Look-alikes that must NOT be flagged as writes.
     { name = "Out-Null not a write",        cmd = [[New-Item -ItemType Directory d | Out-Null]], expect = {} },
+    { name = "New-Item Directory not a write", cmd = [[New-Item -ItemType Directory -Path "newdir"]], expect = {} },
     { name = "Out-String not a write",      cmd = [[Get-Process | Out-String]],         expect = {} },
     { name = "transient .tmp filtered",     cmd = [[Set-Content -Path "scratch.tmp" -Value x]], expect = {} },
     { name = "FD redirect skipped",         cmd = [[some-exe 2>&1]],                     expect = {} },
