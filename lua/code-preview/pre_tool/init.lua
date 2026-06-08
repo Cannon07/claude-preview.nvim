@@ -119,6 +119,29 @@ end
 
 -- ── Per-tool handlers ───────────────────────────────────────────
 
+-- Label shown on the diff tab: the file path relative to the agent's cwd, or the
+-- absolute path when the file isn't under cwd. The prefix test is
+-- separator-insensitive so a backslashed Windows file_path still matches a
+-- (possibly forward-slashed) cwd prefix — otherwise the relative-ization
+-- silently fails on Windows and the tab falls back to the full absolute path.
+-- The relative result is sliced from the ORIGINAL file_path, so it keeps its
+-- native separators. Byte-identical on Unix, where the fold is skipped (a
+-- backslash is a legal Unix filename character, not a separator).
+local function display_path(file_path, cwd)
+  if not cwd or cwd == "" then return file_path end
+  local n = #cwd
+  local fp, cw = file_path, cwd
+  if package.config:sub(1, 1) == "\\" then
+    fp = fp:gsub("\\", "/")
+    cw = cw:gsub("\\", "/")
+  end
+  if fp:sub(1, n + 1) == cw .. "/" then
+    return file_path:sub(n + 2)
+  end
+  return file_path
+end
+M.display_path = display_path  -- exposed for testing
+
 -- Compute the orig/proposed tempfile pair for a single-file tool and hand off
 -- to diff.show_diff (or skip when visible_only excludes the file). The only
 -- per-tool variation is how `proposed_content` is computed, so each handler
@@ -136,11 +159,7 @@ local function present_single_file(file_path, proposed_content, input, cfg)
     return
   end
 
-  local display = file_path
-  if input.cwd and file_path:sub(1, #input.cwd + 1) == input.cwd .. "/" then
-    display = file_path:sub(#input.cwd + 2)
-  end
-  diff.show_diff(orig, prop, display, file_path, nil)
+  diff.show_diff(orig, prop, display_path(file_path, input.cwd), file_path, nil)
 end
 
 local function handle_edit(input, cfg)
