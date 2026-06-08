@@ -172,12 +172,10 @@ function M.check()
     warn("codex not found in PATH (install from https://github.com/openai/codex)")
   end
 
-  -- Codex now uses the shared bin/hook-entry shim (checked above); no
-  -- per-backend adapter script remains. Codex-on-Windows is wired but not yet
-  -- validated end-to-end (issue #46).
-  if is_win then
-    warn("Codex CLI on Windows is not yet validated (issue #46); use Claude Code on Windows")
-  end
+  -- Codex uses the shared bin/hook-entry shim (checked above); no per-backend
+  -- adapter script remains. Codex is supported on Windows (validated end-to-end,
+  -- issue #46) — its PowerShell shim path is the same one Claude Code uses, so
+  -- no Windows-specific warning is needed here.
 
   local codex_backend = require("code-preview.backends.codex")
   if codex_backend.is_installed() then
