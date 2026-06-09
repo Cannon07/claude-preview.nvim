@@ -36,9 +36,11 @@ test_install_copilot_hooks() {
   # Both hook events are registered with the right adapter scripts
   assert_contains "$content" "preToolUse"         "should have preToolUse hook"  || return 1
   assert_contains "$content" "postToolUse"        "should have postToolUse hook" || return 1
-  assert_contains "$content" "hook-entry.sh" "should reference the generic hook-entry shim" || return 1
-  assert_contains "$content" "copilot pre"   "preToolUse should pass the pre event"  || return 1
-  assert_contains "$content" "copilot post"  "postToolUse should pass the post event" || return 1
+  assert_contains "$content" "hook-entry.sh"  "should reference the Unix hook-entry shim"    || return 1
+  assert_contains "$content" "hook-entry.ps1" "should reference the Windows hook-entry shim" || return 1
+  assert_contains "$content" "powershell"     "should include a powershell field for Windows" || return 1
+  assert_contains "$content" "copilot pre"    "preToolUse should pass the pre event"  || return 1
+  assert_contains "$content" "copilot post"   "postToolUse should pass the post event" || return 1
 
   # Each event should have exactly one entry (no accidental duplication)
   local pre_count post_count

@@ -12,18 +12,29 @@ end
 local platform = require("code-preview.platform")
 
 local function bin_dir() return plugin_root() .. "/bin" end
--- Copilot's hook field is `bash` (the value runs under a bash shell), so it
--- always invokes the .sh shim — the PowerShell-wrapped command form doesn't
--- apply to this field shape. Copilot-on-Windows (which would need git-bash)
--- is deferred (issue #46).
-local function hook_script() return bin_dir() .. "/hook-entry.sh" end
+-- Copilot's hook entry carries BOTH a `bash` and a `powershell` field (issue
+-- #46). Copilot picks the one matching the OS: `bash` runs hook-entry.sh on
+-- macOS/Linux, `powershell` runs hook-entry.ps1 on Windows. Unlike Claude
+-- Code/Codex — where our installer writes the interpreter into the command and
+-- gets Windows PowerShell 5.1 — Copilot runs the `powershell` field's string
+-- itself under pwsh 7+, so we emit a bare `& '<path>' …` invocation rather than
+-- reusing platform.hook_command's 5.1 `powershell -File` form.
+local function sh_hook_script() return bin_dir() .. "/hook-entry.sh" end
+local function ps_hook_script() return bin_dir() .. "/hook-entry.ps1" end
 
 local function hooks_dir()   return vim.fn.getcwd() .. "/.github/hooks" end
 local function config_path() return hooks_dir() .. "/code-preview.json" end
 
--- Shell-quote a path for use inside the `bash` field of hooks.json.
+-- Quote a path for the `bash` field (POSIX single-quote escaping).
 local function shquote(s)
   return "'" .. s:gsub("'", "'\\''") .. "'"
+end
+
+-- Quote a path for the `powershell` field (PowerShell single-quote escaping:
+-- a literal ' is doubled). Paired with the call operator (`& '<path>'`) so
+-- paths containing spaces invoke correctly.
+local function psquote(s)
+  return "'" .. s:gsub("'", "''") .. "'"
 end
 
 -- True iff `path` looks like a code-preview.json our installer produced. We
@@ -53,17 +64,31 @@ local function ensure_executable(path)
 end
 
 function M.install()
-  local hook = hook_script()
-  if not ensure_executable(hook) then return end
+  local sh_hook = sh_hook_script()
+  local ps_hook = ps_hook_script()
+  -- Both shims ship with the plugin; ensure_executable also chmods the .sh on
+  -- Unix (a no-op for the .ps1, which is invoked via an explicit interpreter).
+  if not ensure_executable(sh_hook) then return end
+  if not ensure_executable(ps_hook) then return end
 
   vim.fn.mkdir(hooks_dir(), "p")
 
-  -- The bash field runs the shim under bash with the backend + event args.
+  -- Each entry carries both fields so the hook fires on every OS: Copilot runs
+  -- `bash` on macOS/Linux and `powershell` (under pwsh 7+) on Windows.
+  local function entry(event)
+    return {
+      type       = "command",
+      bash       = shquote(sh_hook) .. " copilot " .. event,
+      powershell = "& " .. psquote(ps_hook) .. " copilot " .. event,
+      timeoutSec = 30,
+    }
+  end
+
   local data = {
     version = 1,
     hooks = {
-      preToolUse  = { { type = "command", bash = shquote(hook) .. " copilot pre",  timeoutSec = 30 } },
-      postToolUse = { { type = "command", bash = shquote(hook) .. " copilot post", timeoutSec = 30 } },
+      preToolUse  = { entry("pre") },
+      postToolUse = { entry("post") },
     },
   }
 

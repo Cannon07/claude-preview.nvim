@@ -147,12 +147,11 @@ function M.check()
     warn("copilot not found in PATH (install from https://github.com/github/copilot-cli)")
   end
 
-  -- Copilot uses the shared bin/hook-entry.sh (checked above) through its `bash`
-  -- hook field. On Windows that field needs git-bash, so Copilot-on-Windows is
-  -- deferred (issue #46).
-  if is_win then
-    warn("Copilot CLI on Windows is not yet supported (issue #46); use Claude Code on Windows")
-  end
+  -- Copilot's hook entry carries both a `bash` field (hook-entry.sh, macOS/Linux)
+  -- and a `powershell` field (hook-entry.ps1, Windows). On Windows Copilot runs
+  -- the powershell field under pwsh 7+; ensuring that interpreter is present is
+  -- Copilot CLI's own documented prerequisite, so — like Codex and Claude Code —
+  -- we add no Windows-specific warning here.
 
   -- hooks.json installed
   local copilot_hooks = vim.fn.getcwd() .. "/.github/hooks/code-preview.json"

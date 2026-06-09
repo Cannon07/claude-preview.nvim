@@ -118,9 +118,11 @@ local COPILOT_TOOL_MAP = {
   bash        = "Bash",
 }
 
--- Copilot delivers `toolArgs` as a JSON-encoded string in preToolUse and as
--- an object in postToolUse. For apply_patch the string IS the raw patch text
--- (not JSON). For every other tool the string contains a JSON object with
+-- Copilot delivers `toolArgs` as a JSON-encoded string in preToolUse. In
+-- postToolUse the shape varies across OS / model / Copilot version — it may be
+-- the same JSON string or a decoded object — so the branches below accept BOTH
+-- rather than assume either. For apply_patch the string IS the raw patch text
+-- (not JSON); for every other tool the string contains a JSON object with
 -- snake_case keys (path, old_str, new_str, file_text, command, ...).
 --
 -- Note: file paths are run through the shared `resolve_path`, which collapses
