@@ -208,6 +208,27 @@ describe("normalisers.normalise (copilot)", function()
     assert.equals("/proj/src/rel.lua", out.tool_input.file_path)
   end)
 
+  -- Regression (issue #46): Gemini-class models route edits through Copilot's
+  -- `edit`/`create` tools with an ABSOLUTE Windows path. resolve_path must treat
+  -- a drive-letter / UNC path as already-absolute; otherwise it is joined onto
+  -- cwd (`D:/proj/D:/proj/file`), which fs_stats as missing → the file is
+  -- mis-marked "created", no diff renders, and a junk neo-tree node is injected.
+  it("does not double an absolute Windows drive-letter path", function()
+    local raw = copilot_pre("edit", { path = "D:/proj/sub/foo.lua", old_str = "a", new_str = "b" })
+    raw.cwd = "D:/proj"
+    local out = normalisers.normalise(raw, "copilot")
+    assert.equals("Edit",                out.tool_name)
+    assert.equals("D:/proj/sub/foo.lua", out.tool_input.file_path)
+  end)
+
+  it("does not double an absolute UNC path", function()
+    local out = normalisers.normalise(
+      copilot_pre("create", { path = "\\\\srv\\share\\new.lua", file_text = "x" }), "copilot")
+    assert.equals("Write", out.tool_name)
+    -- Key regression assertion: cwd ("/proj") is NOT prepended.
+    assert.is_nil(out.tool_input.file_path:find("proj", 1, true))
+  end)
+
   it("noise / unknown tool yields nil tool_name", function()
     local out = normalisers.normalise(
       copilot_pre("view", { path = "/tmp/whatever" }), "copilot")

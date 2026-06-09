@@ -57,10 +57,23 @@ local OPENCODE_TOOL_MAP = {
 -- Matches Node's path.resolve semantics the old TS plugin used; without it
 -- opencode keys could be raw "/proj/../escape.txt" strings that don't
 -- compare equal to claudecode-shaped keys for the same logical file.
+-- An already-absolute path must NOT be joined onto cwd. Besides Unix `/`, we
+-- recognise Windows drive-letter (`C:\` or `C:/`) and UNC (`\\server`) absolutes
+-- — Gemini-class models route edits through Copilot's `edit` tool with an
+-- absolute Windows `path`, and treating that as relative doubles it onto cwd
+-- (`D:\proj\D:\proj\file`), which fs_stats as missing (file mis-marked
+-- "created"), opens the diff at a bogus path, and injects a junk neo-tree node.
+-- This mirrors the same fix in apply/patch.lua's resolve_path (issue #46).
+local function is_absolute(p)
+  return p:sub(1, 1) == "/"            -- Unix absolute
+      or p:match("^%a:[/\\]") ~= nil   -- Windows drive-letter (C:\ or C:/)
+      or p:sub(1, 2) == "\\\\"         -- Windows UNC (\\server\share)
+end
+
 local function resolve_path(p, cwd)
   if not p or p == "" then return p end
   local abs = p
-  if p:sub(1, 1) ~= "/" and cwd and cwd ~= "" then
+  if not is_absolute(p) and cwd and cwd ~= "" then
     abs = cwd .. "/" .. p
   end
   return vim.fs.normalize(abs)
