@@ -18,19 +18,19 @@
 -- to files (the bin/apply-patch.lua shim does, pre_tool may use them
 -- differently in future).
 
+local platform = require("code-preview.platform")
+
 local M = {}
 
--- Detect already-absolute paths before joining with cwd. Besides a Unix "/",
--- Codex emits Windows-absolute paths in apply_patch directives (a drive-letter
--- `D:\proj\file` / `D:/proj/file`, or a UNC `\\server\share`). Without these
--- checks such a path is treated as relative and doubled onto cwd
+-- Detect already-absolute paths before joining with cwd. Codex emits
+-- Windows-absolute paths in apply_patch directives (drive-letter
+-- `D:\proj\file` / `D:/proj/file`, or a UNC `\\server\share`); without this
+-- check such a path is treated as relative and doubled onto cwd
 -- (`D:\proj\D:\proj\file`), which then fs_stats as missing (so the file is
 -- mis-marked "created"), opens the diff at a bogus path, and injects a junk
--- neo-tree node.
+-- neo-tree node. Detection is the shared platform.is_absolute (issue #46).
 local function resolve_path(path, cwd)
-  if path:sub(1, 1) == "/"             -- Unix absolute
-    or path:match("^%a:[/\\]")         -- Windows drive-letter absolute
-    or path:sub(1, 2) == "\\\\" then   -- Windows UNC
+  if platform.is_absolute(path) then
     return path
   end
   return cwd .. "/" .. path

@@ -28,6 +28,8 @@
 -- pre-tool detection logic; resist "obvious simplifications" without first
 -- reading shell_detect_spec.lua.
 
+local platform = require("code-preview.platform")
+
 local M = {}
 
 local function is_windows()
@@ -121,10 +123,11 @@ end
 
 local win_paths = {}
 
+-- Absolute on Windows: drive-letter (C:\/C:/), UNC (\\server), or unix-rooted
+-- (`/…`, git-bash). Delegates to the shared platform.is_absolute so every path
+-- resolver agrees on what counts as absolute (issue #46).
 local function win_is_absolute(p)
-  return p:match("^%a:[\\/]") ~= nil  -- drive-letter: C:\ or C:/
-      or p:match("^\\\\") ~= nil      -- UNC: \\server\share
-      or p:sub(1, 1) == "/"           -- unix-rooted (git-bash)
+  return platform.is_absolute(p)
 end
 
 -- Canonicalise to backslash separators with ./.. collapsed.

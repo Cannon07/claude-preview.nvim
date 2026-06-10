@@ -43,6 +43,23 @@ function M.make_executable(path)
   end
 end
 
+--- True if `p` is an already-absolute path. Recognises Unix-rooted (`/…`),
+--- Windows drive-letter (`C:\` or `C:/`), and Windows UNC (`\\server\share`)
+--- forms. Deliberately OS-INDEPENDENT — it inspects the string's shape, so it
+--- recognises Windows-absolute paths even on Unix. Callers use it to avoid
+--- joining an already-absolute path onto cwd, which would double it
+--- (`D:\proj\D:\proj\file` → fs_stat miss → file mis-marked "created", no diff).
+--- Single source of truth shared by the path resolvers in pre_tool/normalisers,
+--- pre_tool/shell_detect, and apply/patch.
+--- @param p string
+--- @return boolean
+function M.is_absolute(p)
+  if not p or p == "" then return false end
+  return p:sub(1, 1) == "/"            -- Unix absolute
+      or p:match("^%a:[/\\]") ~= nil   -- Windows drive-letter (C:\ or C:/)
+      or p:sub(1, 2) == "\\\\"         -- Windows UNC (\\server\share)
+end
+
 --- The external dependency each OS's shim relies on, for health reporting:
 --- the Unix shims parse JSON with jq; the Windows shims use PowerShell's native
 --- ConvertFrom-Json (so jq is irrelevant there).
