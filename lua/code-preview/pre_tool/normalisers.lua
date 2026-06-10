@@ -122,6 +122,13 @@ end
 -- before invoking us). `str_replace` and `edit` carry the same {path,
 -- old_str, new_str} shape; both alias to Edit. `create` and `write` both
 -- alias to Write (file_text vs content).
+--
+-- Shell ops: on macOS/Linux Copilot uses `bash`; on Windows it uses
+-- `powershell` (issue #46, observed with Gemini-class models — Remove-Item
+-- deletes, git status, …). Both carry the same {command, description} shape and
+-- alias to Bash, so shell_detect's PowerShell/POSIX grammar tells them apart.
+-- Without the `powershell` entry, Windows shell deletes/writes arrive as
+-- tool_name=nil and are silently dropped (no neo-tree indicator).
 local COPILOT_TOOL_MAP = {
   apply_patch = "ApplyPatch",
   edit        = "Edit",
@@ -129,6 +136,7 @@ local COPILOT_TOOL_MAP = {
   create      = "Write",
   write       = "Write",
   bash        = "Bash",
+  powershell  = "Bash",
 }
 
 -- Copilot delivers `toolArgs` as a JSON-encoded string in preToolUse. In

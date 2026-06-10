@@ -181,6 +181,18 @@ describe("normalisers.normalise (copilot)", function()
     assert.equals("ls",   out.tool_input.command)
   end)
 
+  -- Regression (issue #46): on Windows Copilot's shell tool is `powershell`,
+  -- not `bash` (observed with Gemini-class models). Same {command, description}
+  -- shape; must alias to Bash so shell_detect runs and marks neo-tree. Without
+  -- it, Remove-Item deletes arrive as tool_name=nil and are silently dropped.
+  it("powershell (Windows shell tool) maps to Bash with command", function()
+    local cmd = 'Remove-Item -Path "D:\\a\\x.txt", "D:\\b\\y.txt" -ErrorAction Stop'
+    local out = normalisers.normalise(
+      copilot_pre("powershell", { command = cmd, description = "delete temp files" }), "copilot")
+    assert.equals("Bash", out.tool_name)
+    assert.equals(cmd,    out.tool_input.command)
+  end)
+
   it("apply_patch treats toolArgs string as raw patch text (not JSON)", function()
     local out = normalisers.normalise({
       toolName = "apply_patch",
