@@ -66,10 +66,11 @@ end
 function M.install()
   local sh_hook = sh_hook_script()
   local ps_hook = ps_hook_script()
-  -- Both shims ship with the plugin; ensure_executable also chmods the .sh on
-  -- Unix (a no-op for the .ps1, which is invoked via an explicit interpreter).
-  if not ensure_executable(sh_hook) then return end
-  if not ensure_executable(ps_hook) then return end
+  -- Verify (and, on Unix, chmod) only the OS-native shim — matches the
+  -- claudecode/codex installers. The config references both shims so it works
+  -- across OSes, but the non-native one is never executed here and always ships
+  -- with the plugin, so we don't fail the install on its account.
+  if not ensure_executable(bin_dir() .. "/hook-entry" .. platform.script_ext()) then return end
 
   vim.fn.mkdir(hooks_dir(), "p")
 

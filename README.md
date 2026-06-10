@@ -452,7 +452,8 @@ vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter", "CursorHold" }, {
 **Copilot CLI hooks not firing**
 - Run `:CodePreviewInstallCopilotCliHooks` in the project root
 - Verify `.github/hooks/code-preview.json` exists
-- Ensure `jq` is in PATH
+- Ensure `jq` is in PATH (macOS/Linux only; the Windows hook uses PowerShell's native JSON parsing)
+- On Windows, Copilot runs the hook under **pwsh 7+** (its own requirement). If hooks silently don't fire, check your PowerShell execution policy with `Get-ExecutionPolicy` — pwsh's default `RemoteSigned` runs the local hook script, but `Restricted`/`AllSigned` blocks it (e.g. `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`)
 - Restart Copilot CLI (hooks are loaded at session start)
 
 **Diff doesn't close after rejecting**
