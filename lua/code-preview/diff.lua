@@ -127,15 +127,35 @@ local function active_count()
   return n
 end
 
+local VALID_LAYOUTS = { tab = true, vsplit = true, inline = true }
+
+-- Values we've already warned about, so a misconfigured layout warns once
+-- rather than on every diff (log.warn surfaces via vim.notify).
+local warned_layouts = {}
+
+-- Validate a resolved layout. An unknown value (a typo like "vspllit", or a
+-- layout removed in a future version) otherwise falls through to the "tabnew"
+-- branch silently, making the config look ignored. Warn once and fall back to
+-- the supported default.
+local function valid_layout(layout)
+  if VALID_LAYOUTS[layout] then return layout end
+  if layout and not warned_layouts[layout] then
+    warned_layouts[layout] = true
+    log.warn(log.fmt(
+      'unknown diff layout %q; falling back to "tab" (valid: tab, vsplit, inline)', layout))
+  end
+  return "tab"
+end
+
 local function layout_for_backend(cfg, backend)
   local diff_cfg = (cfg and cfg.diff) or {}
   local layouts = diff_cfg.layouts or {}
 
   if backend and layouts[backend] then
-    return layouts[backend]
+    return valid_layout(layouts[backend])
   end
 
-  return diff_cfg.layout or "tab"
+  return valid_layout(diff_cfg.layout or "tab")
 end
 
 function M.is_open(file_path)

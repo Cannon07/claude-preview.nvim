@@ -333,4 +333,44 @@ describe("diff layouts", function()
     os.remove(orig)
     os.remove(prop)
   end)
+
+  it("an unknown layout value falls back to the default tab layout", function()
+    local orig = tmp_file("bad_layout_orig.txt", "alpha\nbeta")
+    local prop = tmp_file("bad_layout_prop.txt", "alpha\ngamma")
+
+    local tabs_before = #vim.api.nvim_list_tabpages()
+
+    -- A typo'd layout must not silently behave like vsplit/inline; it warns
+    -- (once) and falls back to a new tab.
+    with_layout("vspllit", function()
+      diff.show_diff(orig, prop, "layout_bad_value.txt")
+    end)
+
+    assert.is_true(diff.is_open())
+    assert.equals(tabs_before + 1, #vim.api.nvim_list_tabpages())
+    local diff_tabpage = vim.api.nvim_get_current_tabpage()
+    assert.equals(2, #vim.api.nvim_tabpage_list_wins(diff_tabpage))
+
+    diff.close_diff()
+    os.remove(orig)
+    os.remove(prop)
+  end)
+
+  it("an unknown per-backend layout override falls back to tab", function()
+    local orig = tmp_file("bad_backend_orig.txt", "alpha\nbeta")
+    local prop = tmp_file("bad_backend_prop.txt", "alpha\ngamma")
+
+    local tabs_before = #vim.api.nvim_list_tabpages()
+
+    with_layout("tab", function()
+      diff.show_diff(orig, prop, "layout_bad_backend.txt", nil, nil, "codex")
+    end, { codex = "vspllit" })
+
+    assert.is_true(diff.is_open())
+    assert.equals(tabs_before + 1, #vim.api.nvim_list_tabpages())
+
+    diff.close_diff()
+    os.remove(orig)
+    os.remove(prop)
+  end)
 end)
