@@ -115,7 +115,7 @@ test_opencode_bash_rm() {
   change_status="$(nvim_eval "require('code-preview.changes').get('$test_file')")"
   assert_eq "deleted" "$change_status" "rm target should be marked as deleted" || return 1
 
-  run_opencode bash_after "$TEST_SOCKET" "$TEST_PROJECT_DIR" >/dev/null 2>&1
+  run_opencode bash_after "$TEST_SOCKET" "$TEST_PROJECT_DIR" "rm $test_file" >/dev/null 2>&1
   sleep 0.5
 
   local change_after

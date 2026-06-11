@@ -9,7 +9,7 @@
 //   write_before  <socket> <dir> <file> <content>
 //   write_after   <socket> <dir> <file>
 //   bash_before   <socket> <dir> <command>
-//   bash_after    <socket> <dir>
+//   bash_after    <socket> <dir> <command>
 
 import { resolve, dirname } from "path"
 import { fileURLToPath } from "url"
@@ -94,8 +94,14 @@ async function main() {
     }
 
     case "bash_after": {
+      // OpenCode's real after-hook carries the tool args on `input` (see the
+      // "tool.execute.after" comment in backends/opencode/index.ts), so the
+      // command is available post-tool. Forward it here so the harness matches
+      // production — the post-tool re-detects the command to clear only that
+      // command's markers (issue #83).
+      const command = process.argv[5]
       await afterHook(
-        { tool: "bash", args: {} },
+        { tool: "bash", args: { command } },
         {},
       )
       console.log("OK")
