@@ -1,9 +1,10 @@
 -- post_tool_handle_spec.lua — Smoke tests for the in-process post-tool.
 --
 -- post_tool.handle's contract:
---   * Bash: clears `deleted` / `bash_modified` / `bash_created` markers from
---     the changes registry; never touches `modified` / `created` markers
---     from concurrent Edit/Write/ApplyPatch proposals.
+--   * Bash: clears the markers for the files THIS command touched (re-detected
+--     from the post payload), never every bash-owned marker — so concurrent
+--     pending Bash commands keep their markers (issue #83), and `modified` /
+--     `created` markers from concurrent Edit/Write/ApplyPatch are untouched.
 --   * ApplyPatch: closes one preview per file referenced in the patch text.
 --   * Other tools: closes the single preview keyed by file_path.
 --   * Always returns "" (no backend reads post-tool stdout).
@@ -25,10 +26,10 @@ describe("post_tool.handle (Bash status clear)", function()
     assert.is_nil(changes.get("/proj/gone.txt"))
   end)
 
-  it("clears bash_modified / bash_created markers", function()
+  it("clears the bash_modified / bash_created markers for files it touched", function()
     changes.set("/proj/a.txt", "bash_modified")
     changes.set("/proj/b.txt", "bash_created")
-    post_tool.handle(payload("Bash", { command = "echo x > a.txt" }), "claudecode")
+    post_tool.handle(payload("Bash", { command = "echo x > a.txt; echo y > b.txt" }), "claudecode")
     assert.is_nil(changes.get("/proj/a.txt"))
     assert.is_nil(changes.get("/proj/b.txt"))
   end)
@@ -43,6 +44,28 @@ describe("post_tool.handle (Bash status clear)", function()
     assert.equals("modified", changes.get("/proj/edit.lua"))
     assert.equals("created",  changes.get("/proj/new.lua"))
     assert.is_nil(changes.get("/proj/gone.txt"))
+  end)
+
+  it("accepting one Bash delete keeps other pending Bash deletes marked", function()
+    -- Regression for #83: two separate Bash deletes are pending, each with its
+    -- own `deleted` marker. Accepting the first command (its PostToolUse fires)
+    -- must clear ONLY that command's file; the still-pending command's marker
+    -- survives. The old global status sweep wiped both.
+    changes.set("/proj/a.txt", "deleted")
+    changes.set("/proj/b.txt", "deleted")
+    post_tool.handle(payload("Bash", { command = "rm a.txt" }), "claudecode")
+    assert.is_nil(changes.get("/proj/a.txt"))
+    assert.equals("deleted", changes.get("/proj/b.txt"))
+  end)
+
+  it("scoped clear covers bash writes, not just deletes", function()
+    -- A pending shell write (`echo x > b.txt` → bash_created/modified) must
+    -- survive accepting a different command's write.
+    changes.set("/proj/a.txt", "bash_modified")
+    changes.set("/proj/b.txt", "bash_created")
+    post_tool.handle(payload("Bash", { command = "echo x > a.txt" }), "claudecode")
+    assert.is_nil(changes.get("/proj/a.txt"))
+    assert.equals("bash_created", changes.get("/proj/b.txt"))
   end)
 end)
 

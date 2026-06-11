@@ -11,12 +11,13 @@
 
 local M = {}
 
-local normalisers = require("code-preview.pre_tool.normalisers")
-local changes     = require("code-preview.changes")
-local neo_tree    = require("code-preview.neo_tree")
-local diff        = require("code-preview.diff")
-local log         = require("code-preview.log")
-local apply_patch = require("code-preview.apply.patch")
+local normalisers  = require("code-preview.pre_tool.normalisers")
+local changes      = require("code-preview.changes")
+local neo_tree     = require("code-preview.neo_tree")
+local diff         = require("code-preview.diff")
+local log          = require("code-preview.log")
+local apply_patch  = require("code-preview.apply.patch")
+local shell_detect = require("code-preview.pre_tool.shell_detect")
 
 -- Extract paths from both unified-diff (+++ lines) and custom-patch
 -- (*** Update/Add/Delete File:) formats.
@@ -60,9 +61,17 @@ function M.handle(raw, backend)
 
   if tool_name == "Bash" then
     -- Bash pre-hook set deleted / bash_* markers without opening a preview.
-    -- Clear those statuses specifically so we don't clobber `modified` markers
-    -- from concurrent Edit/Write/ApplyPatch whose post-hook hasn't fired.
-    changes.clear_by_statuses({ "deleted", "bash_modified", "bash_created" })
+    -- Clear only THIS command's files, not every bash-owned marker: a global
+    -- status sweep wiped the still-pending markers of concurrent Bash commands
+    -- (issue #83). Detection is deterministic, so re-running it on the post
+    -- payload yields exactly the paths pre_tool marked — mirroring how the
+    -- ApplyPatch branch closes specific files via patch_paths. This also keeps
+    -- concurrent Edit/Write `modified`/`created` markers untouched, since those
+    -- paths never appear in a shell command's detection.
+    local cmd = input.tool_input and input.tool_input.command or ""
+    local detected = shell_detect.detect(cmd, input.cwd or "")
+    for _, p in ipairs(detected.rm_paths)    do changes.clear(p) end
+    for _, p in ipairs(detected.write_paths) do changes.clear(p) end
     neo_tree.refresh_deferred(200)
     return ""
   end
