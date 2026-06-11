@@ -100,18 +100,23 @@ async function runHook(event: "pre" | "post", payload: object): Promise<void> {
       return
     } catch (err: any) {
       const elapsed = Date.now() - start
-      const spurious =
-        !!err && err.code === "ETIMEDOUT" && elapsed < SPURIOUS_TIMEOUT_MS
-      if (spurious && attempt < MAX_HOOK_ATTEMPTS) {
+      // A timeout-kill surfaces as code ETIMEDOUT and/or signal SIGTERM — Node
+      // has historically reported one or the other depending on platform — so
+      // match both, or the spurious-timeout retry could be missed where only
+      // SIGTERM is set. Still gated on elapsed < SPURIOUS_TIMEOUT_MS below, so a
+      // genuine ~15s hang (also SIGTERM'd) is never mistaken for spurious.
+      const timedOut =
+        !!err && (err.code === "ETIMEDOUT" || err.signal === "SIGTERM")
+      if (timedOut && elapsed < SPURIOUS_TIMEOUT_MS && attempt < MAX_HOOK_ATTEMPTS) {
         // Yield so libuv refreshes its cached loop time before retrying.
         await new Promise<void>((resolve) => setImmediate(resolve))
         continue
       }
-      // Abstain on any failure. Log a genuine timeout (a real ~15s hang) since
-      // it's otherwise hard to diagnose; everything else is best-effort.
-      if (err && (err.code === "ETIMEDOUT" || err.signal === "SIGTERM")) {
+      // Abstain on any failure. Log a genuine timeout with elapsed ms so a real
+      // hang (~15s) is distinguishable from exhausted spurious retries.
+      if (timedOut) {
         // eslint-disable-next-line no-console
-        console.debug(`[code-preview] hook-entry ${event} timed out`)
+        console.debug(`[code-preview] hook-entry ${event} timed out after ${elapsed}ms`)
       }
       return
     }
