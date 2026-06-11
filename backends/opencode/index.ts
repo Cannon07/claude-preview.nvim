@@ -62,41 +62,34 @@ const HOOK_TIMEOUT_MS = 15000
 const SPURIOUS_TIMEOUT_MS = 2000
 const MAX_HOOK_ATTEMPTS = 3
 
-// Node's spawnSync (used by execSync) derives its timeout deadline from libuv's
-// *cached* loop time, which is only refreshed once per loop iteration. The first
-// spawnSync that runs right after async work — here, the awaited enqueueHook in
-// the tool hooks — sees a stale "now", so `now + timeout` is already in the past
-// and libuv SIGTERMs the child the instant it spawns: a spurious ETIMEDOUT that
-// returns in ~15ms instead of 15s. On Windows this drops the FIRST hook of a
-// concurrent burst, so that file gets no diff/marker (issue #46; Unix is
-// unaffected — it execs the .sh directly and doesn't hit this path the same way).
+// Run `run` (a synchronous, throwing operation — here a spawnSync), retrying a
+// SPURIOUS timeout.
+//
+// Why this exists: Node's spawnSync (used by execSync) derives its timeout
+// deadline from libuv's *cached* loop time, which is only refreshed once per
+// loop iteration. The first spawnSync that runs right after async work — here,
+// the awaited enqueueHook in the tool hooks — sees a stale "now", so
+// `now + timeout` is already in the past and libuv SIGTERMs the child the
+// instant it spawns: a spurious ETIMEDOUT that returns in ~15ms instead of 15s.
+// On Windows this drops the FIRST hook of a concurrent burst, so that file gets
+// no diff/marker (issue #46; Unix is unaffected — it execs the .sh directly and
+// doesn't hit this the same way).
 //
 // The fix: retry, but first `await` a turn of the event loop so libuv refreshes
 // its cached time — a synchronous retry would re-read the same stale value and
-// fail again (which is exactly why the *next* hook in the burst always succeeds).
-async function runHook(event: "pre" | "post", payload: object): Promise<void> {
-  const shim = resolveHookEntry()
-  if (!shim) {
-    // Surface enough breadcrumb that a misconfigured bin-path.txt isn't a
-    // silently-broken plugin.
-    // eslint-disable-next-line no-console
-    console.debug(`[code-preview] could not resolve hook-entry shim`)
-    return
-  }
-  // On Windows the .ps1 runs through PowerShell; on Unix the .sh runs directly.
-  const cmd = IS_WIN
-    ? `powershell -NoProfile -ExecutionPolicy Bypass -File "${shim}" opencode ${event}`
-    : `"${shim}" opencode ${event}`
-
+// fail again (which is exactly why the *next* hook in a burst always succeeds).
+// A genuine timeout takes ~HOOK_TIMEOUT_MS, far above SPURIOUS_TIMEOUT_MS, so it
+// is never retried. `label` is used only for the diagnostic log. Exported so the
+// retry behaviour can be exercised by the test harness (it's a Windows libuv
+// quirk that can't otherwise be reproduced on CI).
+export async function runWithSpuriousRetry(
+  run: () => void,
+  label = "hook-entry",
+): Promise<void> {
   for (let attempt = 1; attempt <= MAX_HOOK_ATTEMPTS; attempt++) {
     const start = Date.now()
     try {
-      execSync(cmd, {
-        input: JSON.stringify(payload),
-        env: { ...process.env, CODE_PREVIEW_BACKEND: "opencode" },
-        timeout: HOOK_TIMEOUT_MS,
-        stdio: ["pipe", "pipe", "pipe"],
-      })
+      run()
       return
     } catch (err: any) {
       const elapsed = Date.now() - start
@@ -116,11 +109,35 @@ async function runHook(event: "pre" | "post", payload: object): Promise<void> {
       // hang (~15s) is distinguishable from exhausted spurious retries.
       if (timedOut) {
         // eslint-disable-next-line no-console
-        console.debug(`[code-preview] hook-entry ${event} timed out after ${elapsed}ms`)
+        console.debug(`[code-preview] ${label} timed out after ${elapsed}ms`)
       }
       return
     }
   }
+}
+
+async function runHook(event: "pre" | "post", payload: object): Promise<void> {
+  const shim = resolveHookEntry()
+  if (!shim) {
+    // Surface enough breadcrumb that a misconfigured bin-path.txt isn't a
+    // silently-broken plugin.
+    // eslint-disable-next-line no-console
+    console.debug(`[code-preview] could not resolve hook-entry shim`)
+    return
+  }
+  // On Windows the .ps1 runs through PowerShell; on Unix the .sh runs directly.
+  const cmd = IS_WIN
+    ? `powershell -NoProfile -ExecutionPolicy Bypass -File "${shim}" opencode ${event}`
+    : `"${shim}" opencode ${event}`
+
+  await runWithSpuriousRetry(() => {
+    execSync(cmd, {
+      input: JSON.stringify(payload),
+      env: { ...process.env, CODE_PREVIEW_BACKEND: "opencode" },
+      timeout: HOOK_TIMEOUT_MS,
+      stdio: ["pipe", "pipe", "pipe"],
+    })
+  }, `hook-entry ${event}`)
 }
 
 // ── Hook serialisation ───────────────────────────────────────────
