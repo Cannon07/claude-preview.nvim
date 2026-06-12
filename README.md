@@ -112,6 +112,8 @@ Then run the one install command for your agent (and apply any agent-specific co
 
 `:CodePreviewInstallClaudeCodeHooks` — writes hooks to `.claude/settings.local.json`. No extra config needed.
 
+> **Permissions:** by default the plugin forces a review prompt on every edit, so the preview always lines up with a real accept/reject moment — even if Claude Code is in bypass/allowlist mode. To instead let Claude Code's own permission settings decide, set `diff.defer_claude_permissions = true` (you'll then only see previews for edits Claude Code already stops to ask about).
+
 </details>
 
 <details>
@@ -196,6 +198,26 @@ require("code-preview").setup({
     layouts = { codex = "inline" },  -- keys: claudecode | opencode | copilot | codex
   },
 })
+```
+
+### A fuller example
+
+A realistic, opinionated lazy.nvim spec — inline diffs everywhere, a per-agent override, and neo-tree revealing from the git root:
+
+```lua
+{
+  "Cannon07/code-preview.nvim",
+  event = "VeryLazy",
+  config = function()
+    require("code-preview").setup({
+      diff = {
+        layout  = "inline",              -- unified GitHub-style diff (the strategic default)
+        layouts = { opencode = "tab" },  -- override the layout per agent, to taste
+      },
+      neo_tree = { reveal_root = "git" }, -- reveal from the git root instead of cwd
+    })
+  end,
+}
 ```
 
 **Full option reference:** `:help code-preview-config` (or [`doc/code-preview.txt`](doc/code-preview.txt)) — every option, with the defaults kept in sync with the source.
