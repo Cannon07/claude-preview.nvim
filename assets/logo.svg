@@ -1,27 +1,41 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="code-preview.nvim logo">
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="code-preview.nvim logo">
   <defs>
-    <clipPath id="logoClip">
-      <rect x="40" y="40" width="176" height="176" rx="30"/>
-    </clipPath>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#18212F"/>
+      <stop offset="1" stop-color="#0E141F"/>
+    </linearGradient>
+    <linearGradient id="seam" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F0626B"/>
+      <stop offset="0.5" stop-color="#F0626B"/>
+      <stop offset="0.5" stop-color="#3FB950"/>
+      <stop offset="1" stop-color="#3FB950"/>
+    </linearGradient>
   </defs>
 
-  <!-- rounded app-icon background -->
-  <rect x="0" y="0" width="256" height="256" rx="56" fill="#0d1117"/>
+  <!-- tile -->
+  <rect x="56" y="56" width="400" height="400" rx="104" fill="url(#tile)" stroke="#27344A" stroke-width="3"/>
+  <rect x="56.5" y="56.5" width="399" height="399" rx="103.5" fill="none" stroke="#000000" stroke-opacity="0.25" stroke-width="1"/>
 
-  <!-- mark: side-by-side diff (before | after) -->
-  <g clip-path="url(#logoClip)">
-    <rect x="40" y="40" width="176" height="176" fill="#161b22"/>
-    <rect x="40" y="40" width="88" height="176" fill="#f85149" opacity="0.10"/>
-    <rect x="128" y="40" width="88" height="176" fill="#3fb950" opacity="0.12"/>
-    <!-- before (left) — group centered on the mark's vertical midpoint (y=128) -->
-    <rect x="64" y="90.5"  width="52" height="11" rx="5" fill="#768390" opacity="0.5"/>
-    <rect x="64" y="122.5" width="44" height="11" rx="5" fill="#f85149"/>
-    <rect x="64" y="154.5" width="48" height="11" rx="5" fill="#768390" opacity="0.5"/>
-    <!-- after (right) -->
-    <rect x="140" y="90.5"  width="52" height="11" rx="5" fill="#768390" opacity="0.5"/>
-    <rect x="140" y="122.5" width="44" height="11" rx="5" fill="#3fb950"/>
-    <rect x="140" y="154.5" width="48" height="11" rx="5" fill="#768390" opacity="0.5"/>
-  </g>
-  <line x1="128" y1="52" x2="128" y2="204" stroke="#30363d" stroke-width="2"/>
-  <rect x="40" y="40" width="176" height="176" rx="30" fill="none" stroke="#30363d" stroke-width="2"/>
+  <!-- context line (top) -->
+  <rect x="150" y="168" width="150" height="30" rx="9" fill="#28344A"/>
+
+  <!-- diff gutter seam: green over the add row, red over the remove row -->
+  <rect x="120" y="210" width="6" height="92" rx="3" fill="url(#seam)" opacity="0.95"/>
+
+  <!-- removed line (top, matching GitHub diff order) -->
+  <text x="138" y="243" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="34" font-weight="700" fill="#F0626B" text-anchor="middle">−</text>
+  <rect x="150" y="214" width="232" height="34" rx="9" fill="#F0626B" fill-opacity="0.14"/>
+  <rect x="150" y="214" width="232" height="34" rx="9" fill="none" stroke="#F0626B" stroke-opacity="0.5" stroke-width="2"/>
+  <rect x="168" y="225" width="86" height="12" rx="6" fill="#F0626B" fill-opacity="0.85"/>
+  <rect x="266" y="225" width="98" height="12" rx="6" fill="#F0626B" fill-opacity="0.45"/>
+
+  <!-- added line (bottom) -->
+  <text x="138" y="293" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="34" font-weight="700" fill="#3FB950" text-anchor="middle">+</text>
+  <rect x="150" y="264" width="232" height="34" rx="9" fill="#3FB950" fill-opacity="0.16"/>
+  <rect x="150" y="264" width="232" height="34" rx="9" fill="none" stroke="#3FB950" stroke-opacity="0.55" stroke-width="2"/>
+  <rect x="168" y="275" width="120" height="12" rx="6" fill="#3FB950" fill-opacity="0.9"/>
+  <rect x="300" y="275" width="64" height="12" rx="6" fill="#3FB950" fill-opacity="0.5"/>
+
+  <!-- context line (bottom) -->
+  <rect x="150" y="314" width="190" height="30" rx="9" fill="#28344A"/>
 </svg>
