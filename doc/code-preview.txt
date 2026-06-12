@@ -1,0 +1,243 @@
+*code-preview.txt*        Review AI coding-agent edits as native Neovim diffs
+
+==============================================================================
+CONTENTS                                                *code-preview-contents*
+
+  1. Introduction ........................... |code-preview-introduction|
+  2. Setup .................................. |code-preview-setup|
+  3. Configuration .......................... |code-preview-config|
+  4. Commands ............................... |code-preview-commands|
+  5. Keymaps ................................ |code-preview-keymaps|
+  6. Agents ................................. |code-preview-agents|
+
+==============================================================================
+1. INTRODUCTION                                     *code-preview-introduction*
+
+                                                                 *code-preview*
+
+code-preview.nvim shows the edits an AI coding agent proposes as native Neovim
+diffs, so you review, accept, or reject changes inside your editor instead of
+eyeballing them in the agent's CLI.
+
+It supports four agents as equal first-class citizens — Claude Code, OpenCode,
+GitHub Copilot CLI, and OpenAI Codex CLI — on macOS, Linux, and Windows.
+
+The README is the landing page; this help file is the reference manual. The
+configuration block in |code-preview-config| is the canonical option reference
+and is kept in sync with the defaults in `lua/code-preview/init.lua`.
+
+==============================================================================
+2. SETUP                                                   *code-preview-setup*
+
+                                                          *code-preview.setup()*
+
+Call `setup()` once from your plugin config. It works with zero arguments;
+pass a table to override any default (see |code-preview-config|). Options are
+deep-merged over the defaults.
+>lua
+    require("code-preview").setup()
+<
+With lazy.nvim: >lua
+    {
+      "Cannon07/code-preview.nvim",
+      config = function()
+        require("code-preview").setup()
+      end,
+    }
+<
+After `setup()`, install the hooks for your agent (see |code-preview-agents|)
+and restart that agent's CLI.
+
+==============================================================================
+3. CONFIGURATION                                          *code-preview-config*
+
+Full default configuration. These values are copied verbatim from
+`lua/code-preview/init.lua` and are the source of truth for every option: >lua
+    require("code-preview").setup({
+      debug = false,  -- enable debug logging to stdpath("log")/code-preview.log
+      diff = {
+        layout = "tab",        -- "tab", "vsplit", or "inline"
+        layouts = {},          -- override layout per backend: { opencode = "tab", codex = "vsplit" }
+        labels = { current = "CURRENT", proposed = "PROPOSED" },
+        equalize = true,
+        full_file = true,
+        visible_only = false,  -- only show diffs for files open in a visible nvim window
+        defer_claude_permissions = false,  -- when true, skip permissionDecision and let Claude Code's own settings decide
+      },
+      neo_tree = {
+        enabled = true,
+        -- reveal = false disables scroll-to-file in the tree. Change indicators
+        -- (modified/created/deleted icons) still appear — to disable those too,
+        -- set neo_tree.enabled = false.
+        reveal = true,         -- reveal edited files in neo-tree
+        reveal_root = "cwd",   -- "cwd" (default) or "git" (nearest git root)
+        refresh_on_change = true,
+        position = "right",
+        symbols = {
+          modified = "󰏫",
+          created  = "󰎔",
+          deleted  = "󰆴",
+        },
+        highlights = {
+          modified = { fg = "#e8a838", bold = true },
+          created  = { fg = "#56c8d8", bold = true },
+          deleted  = { fg = "#e06c75", bold = true, strikethrough = true },
+        },
+      },
+      keys = {
+        -- Set any entry to false to skip that binding. Set `keys = false` to skip all.
+        -- <Plug>(CodePreviewCloseAll) is always defined so users can map it themselves.
+        next_change = "]c",        -- buffer-local in inline diff buffers
+        prev_change = "[c",        -- buffer-local in inline diff buffers
+        close_all   = "<leader>dq", -- global; close diff and clear indicators
+      },
+      highlights = {
+        current = {
+          DiffAdd    = { bg = "#4c2e2e" },
+          DiffDelete = { bg = "#4c2e2e" },
+          DiffChange = { bg = "#4c3a2e" },
+          DiffText   = { bg = "#5c3030" },
+        },
+        proposed = {
+          DiffAdd    = { bg = "#2e4c2e" },
+          DiffDelete = { bg = "#4c2e2e" },
+          DiffChange = { bg = "#2e3c4c" },
+          DiffText   = { bg = "#3e5c3e" },
+        },
+        inline = {
+          added        = { bg = "#2e4c2e" },
+          removed      = { bg = "#4c2e2e" },
+          added_text   = { bg = "#3a6e3a" },
+          removed_text = { bg = "#6e3a3a" },
+        },
+      },
+    })
+<
+Option notes ~
+
+                                                   *code-preview-config-layout*
+diff.layout         "tab" (default) | "vsplit" | "inline". Selects how a
+                    preview is rendered. "tab" and "vsplit" use the
+                    side-by-side renderer; "inline" uses the unified-diff
+                    renderer (with `]c`/`[c` navigation).
+
+                                                  *code-preview-config-layouts*
+diff.layouts        Per-agent layout override, keyed by agent id:
+                    `claudecode`, `opencode`, `copilot`, `codex`. Any agent
+                    not listed falls back to `diff.layout`.
+                    Example: `layouts = { codex = "inline" }`.
+
+diff.visible_only   When true, suppress previews for files not visible in any
+                    Neovim window. Change indicators still fire. Toggle at
+                    runtime with `:CodePreviewToggleVisibleOnly`.
+
+diff.defer_claude_permissions
+                    Claude Code only. When true, the plugin does not force a
+                    review gate and defers to Claude Code's own permission
+                    settings.
+
+neo_tree            Soft dependency. If neo-tree is not installed these
+                    options are inert. `enabled = false` disables the
+                    integration entirely; `reveal = false` keeps the change
+                    indicators but stops scrolling the tree to the file.
+
+keys                Set any entry to false to skip that binding, or
+                    `keys = false` to skip them all. `<Plug>(CodePreviewCloseAll)`
+                    is always defined so it can be mapped manually: >lua
+                        vim.keymap.set("n", "<leader>x",
+                          "<Plug>(CodePreviewCloseAll)")
+<
+==============================================================================
+4. COMMANDS                                             *code-preview-commands*
+
+                                       *:CodePreviewInstallClaudeCodeHooks*
+:CodePreviewInstallClaudeCodeHooks
+                    Install Claude Code hooks to `.claude/settings.local.json`.
+
+                                     *:CodePreviewUninstallClaudeCodeHooks*
+:CodePreviewUninstallClaudeCodeHooks
+                    Remove Claude Code hooks (leaves other hooks intact).
+
+                                         *:CodePreviewInstallOpenCodeHooks*
+:CodePreviewInstallOpenCodeHooks
+                    Install the OpenCode plugin to `.opencode/plugins/`.
+
+                                       *:CodePreviewUninstallOpenCodeHooks*
+:CodePreviewUninstallOpenCodeHooks
+                    Remove the OpenCode plugin.
+
+                                        *:CodePreviewInstallCopilotCliHooks*
+:CodePreviewInstallCopilotCliHooks
+                    Install Copilot CLI hooks to
+                    `.github/hooks/code-preview.json`.
+
+                                      *:CodePreviewUninstallCopilotCliHooks*
+:CodePreviewUninstallCopilotCliHooks
+                    Remove Copilot CLI hooks.
+
+                                          *:CodePreviewInstallCodexCliHooks*
+:CodePreviewInstallCodexCliHooks
+                    Install Codex CLI hooks to `.codex/hooks.json`.
+
+                                        *:CodePreviewUninstallCodexCliHooks*
+:CodePreviewUninstallCodexCliHooks
+                    Remove Codex CLI hooks.
+
+                                                    *:CodePreviewCloseDiff*
+:CodePreviewCloseDiff
+                    Manually close the diff. Use after rejecting a change.
+
+                                                       *:CodePreviewStatus*
+:CodePreviewStatus
+                    Show socket path, hook status, and a dependency check.
+
+                                            *:CodePreviewToggleVisibleOnly*
+:CodePreviewToggleVisibleOnly
+                    Toggle `diff.visible_only` — show diffs only for files
+                    open in a visible window.
+
+                                                  *:checkhealth-code-preview*
+:checkhealth code-preview
+                    Full health check across all agents.
+
+==============================================================================
+5. KEYMAPS                                               *code-preview-keymaps*
+
+Defaults (all configurable via the `keys` table, see |code-preview-config|):
+
+  <leader>dq    global              Close the diff and clear indicators
+                                    (same as `:CodePreviewCloseDiff`).
+  ]c            inline diff buffer  Jump to the next change.
+  [c            inline diff buffer  Jump to the previous change.
+
+                                              *<Plug>(CodePreviewCloseAll)*
+A `<Plug>(CodePreviewCloseAll)` mapping is always defined, regardless of the
+`keys` config, so it can be bound manually even with `keys = false`.
+
+==============================================================================
+6. AGENTS                                                 *code-preview-agents*
+
+After |code-preview.setup()|, install hooks for your agent and restart its
+CLI. The diff/review experience is identical across agents.
+
+Claude Code ~
+    `:CodePreviewInstallClaudeCodeHooks`. No extra agent config required.
+
+OpenCode ~
+    `:CodePreviewInstallOpenCodeHooks`, then enable permission prompts in
+    `~/.config/opencode/opencode.json`:
+    `{ "permission": { "edit": "ask", "bash": "ask" } }`.
+
+GitHub Copilot CLI ~
+    `:CodePreviewInstallCopilotCliHooks`. No extra agent config required.
+
+OpenAI Codex CLI ~
+    `:CodePreviewInstallCodexCliHooks`, then make Codex ask before applying
+    edits in `.codex/config.toml` (or `~/.codex/config.toml`):
+    `approval_policy = "on-request"` and `sandbox_mode = "read-only"`.
+    Hooks are enabled by default in modern Codex.
+
+For architecture and internals, see CONTRIBUTING.md and CONTEXT.md in the
+repository root.
+
+vim:tw=78:ts=8:sw=8:noet:ft=help:norl:

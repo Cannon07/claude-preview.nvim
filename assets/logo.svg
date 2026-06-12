@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="code-preview.nvim logo">
+  <defs>
+    <clipPath id="logoClip">
+      <rect x="40" y="40" width="176" height="176" rx="30"/>
+    </clipPath>
+  </defs>
+
+  <!-- rounded app-icon background -->
+  <rect x="0" y="0" width="256" height="256" rx="56" fill="#0d1117"/>
+
+  <!-- mark: side-by-side diff (before | after) -->
+  <g clip-path="url(#logoClip)">
+    <rect x="40" y="40" width="176" height="176" fill="#161b22"/>
+    <rect x="40" y="40" width="88" height="176" fill="#f85149" opacity="0.10"/>
+    <rect x="128" y="40" width="88" height="176" fill="#3fb950" opacity="0.12"/>
+    <!-- before (left) — group centered on the mark's vertical midpoint (y=128) -->
+    <rect x="64" y="90.5"  width="52" height="11" rx="5" fill="#768390" opacity="0.5"/>
+    <rect x="64" y="122.5" width="44" height="11" rx="5" fill="#f85149"/>
+    <rect x="64" y="154.5" width="48" height="11" rx="5" fill="#768390" opacity="0.5"/>
+    <!-- after (right) -->
+    <rect x="140" y="90.5"  width="52" height="11" rx="5" fill="#768390" opacity="0.5"/>
+    <rect x="140" y="122.5" width="44" height="11" rx="5" fill="#3fb950"/>
+    <rect x="140" y="154.5" width="48" height="11" rx="5" fill="#768390" opacity="0.5"/>
+  </g>
+  <line x1="128" y1="52" x2="128" y2="204" stroke="#30363d" stroke-width="2"/>
+  <rect x="40" y="40" width="176" height="176" rx="30" fill="none" stroke="#30363d" stroke-width="2"/>
+</svg>

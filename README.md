@@ -1,81 +1,63 @@
+<div align="center">
+
+<img src="assets/logo.svg" alt="code-preview.nvim logo" width="128">
+
 # code-preview.nvim
 
-A Neovim plugin that shows a **diff preview before your AI coding agent applies any file change** — letting you review exactly what's changing before accepting.
+**Review every edit your AI coding agent makes as a native Neovim diff — before it's written to disk.**
 
-Supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [OpenCode](https://opencode.ai), [GitHub Copilot CLI](https://github.com/github/copilot-cli), and [OpenAI Codex CLI](https://github.com/openai/codex) as backends.
+[![CI](https://github.com/Cannon07/code-preview.nvim/actions/workflows/e2e-tests.yml/badge.svg)](https://github.com/Cannon07/code-preview.nvim/actions/workflows/e2e-tests.yml)
+[![Release](https://img.shields.io/github/v/release/Cannon07/code-preview.nvim?label=release)](https://github.com/Cannon07/code-preview.nvim/releases)
+[![Neovim](https://img.shields.io/badge/Neovim-0.10%2B-57A143?logo=neovim&logoColor=white)](https://neovim.io)
+[![License: MIT](https://img.shields.io/github/license/Cannon07/code-preview.nvim)](LICENSE)
+
+Works with **Claude Code**, **OpenCode**, **GitHub Copilot CLI**, and **OpenAI Codex CLI** — on **macOS, Linux, and Windows**.
+
+<img src="assets/diff-preview.png" alt="A proposed AI edit shown as a side-by-side diff in Neovim" width="860">
+
+</div>
 
 ---
 
 ## Demo
 
-### Claude Code
-![Claude Code demo](docs/code-preview-claudecode.gif)
+![Claude Code demo](assets/code-preview-claudecode.gif)
+
+> Shown with Claude Code. OpenCode, GitHub Copilot CLI, and Codex CLI work the same way — expand **📺 More demos** below.
+
+---
+
+## Why
+
+Your AI coding agent proposes edits in its terminal — a cramped, scroll-past diff you have to eyeball before typing `y`. **code-preview.nvim** intercepts that moment and opens the proposed change as a real Neovim diff: full syntax highlighting, your colorscheme, your keymaps. Review it like any other diff, then accept or reject in the agent's CLI as usual.
+
+- 🔍 **See edits as native diffs** — side-by-side or GitHub-style inline, before anything touches disk
+- 🤝 **Agent-agnostic** — Claude Code, OpenCode, Copilot CLI, Codex CLI, with more agents planned
+- 🌳 **Neo-tree integration** — your file tree marks what's being modified, created, or deleted
+- 🪶 **No Python** — file transforms run through `nvim --headless -l`; the only hard dep is Neovim 0.10+
+
+<details>
+<summary><b>📺 More demos</b></summary>
 
 ### OpenCode
-![OpenCode demo](docs/code-preview-opencode.gif)
+![OpenCode demo](assets/code-preview-opencode.gif)
 
 ### GitHub Copilot CLI
-![GitHub Copilot CLI demo](docs/code-preview-copilot.gif)
+![GitHub Copilot CLI demo](assets/code-preview-copilot.gif)
 
 ### OpenAI Codex CLI
-![OpenAI Codex CLI demo](docs/code-preview-codex.gif)
+![OpenAI Codex CLI demo](assets/code-preview-codex.gif)
+
+### Neo-tree integration
+![neo-tree integration demo](assets/code-preview-neotree-integration.gif)
+
+</details>
 
 ---
 
-## Table of Contents
+## Install
 
-- [Features](#features)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-  - [Claude Code](#claude-code)
-  - [OpenCode](#opencode)
-  - [GitHub Copilot CLI](#github-copilot-cli)
-  - [OpenAI Codex CLI](#openai-codex-cli)
-- [How it works](#how-it-works)
-- [Configuration](#configuration)
-- [Commands](#commands)
-- [Keymaps](#keymaps)
-- [Diff Layouts](#diff-layouts)
-- [Neo-tree Integration](#neo-tree-integration-optional)
-- [Testing](#testing)
-- [Troubleshooting](#troubleshooting)
-
----
-
-## Features
-
-- **Diff preview** — side-by-side or inline diff opens in Neovim before any file is written
-- **Multiple layouts** — tab, vsplit, or GitHub-style inline diff with syntax highlighting
-- **Neo-tree integration** — file tree indicators show which files are being modified, created, or deleted
-- **Multi-backend** — works with Claude Code, OpenCode, GitHub Copilot CLI, and OpenAI Codex CLI
-- **No Python dependency** — file transformations use `nvim --headless -l`
-
----
-
-## Requirements
-
-- Neovim >= 0.10
-
-**For Claude Code backend:**
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) with hooks support
-- [jq](https://jqlang.github.io/jq/) — for JSON parsing in hook scripts
-
-**For OpenCode backend:**
-- [OpenCode](https://opencode.ai) >= 1.3.0
-
-**For GitHub Copilot CLI backend:**
-- [GitHub Copilot CLI](https://github.com/github/copilot-cli) (generally available since Feb 2026)
-
-**For OpenAI Codex CLI backend:**
-- [OpenAI Codex CLI](https://github.com/openai/codex) (recent enough to support `apply_patch` PreToolUse hooks; older builds only fired hooks for `Bash`)
-- [jq](https://jqlang.github.io/jq/) — for hook payload translation
-
----
-
-## Installation
-
-### lazy.nvim
+With [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 ```lua
 {
@@ -86,79 +68,172 @@ Supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [OpenCod
 }
 ```
 
-### Manual (path-based)
+<details>
+<summary>Manual (path-based)</summary>
 
 ```lua
 vim.opt.rtp:prepend("/path/to/code-preview.nvim")
 require("code-preview").setup()
 ```
 
+</details>
+
+**Requirements:** Neovim >= 0.10. Each agent has a couple of extra needs — see below.
+
+<details>
+<summary>Per-agent requirements</summary>
+
+| Agent | Needs |
+|-------|-------|
+| **Claude Code** | [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (with hooks) · [jq](https://jqlang.github.io/jq/) |
+| **OpenCode** | [OpenCode](https://opencode.ai) (a version with plugin support) |
+| **GitHub Copilot CLI** | [Copilot CLI](https://github.com/github/copilot-cli) (GA since Feb 2026) |
+| **OpenAI Codex CLI** | [Codex CLI](https://github.com/openai/codex) recent enough for `apply_patch` PreToolUse hooks · [jq](https://jqlang.github.io/jq/) |
+
+> On Windows, the Copilot CLI hook runs under PowerShell 7+ and needs no `jq`.
+
+</details>
+
 ---
 
-## Quick Start
+## Quick start
 
-### Claude Code
+After `setup()`, the flow is the same for every agent:
 
-1. Install the plugin and call `setup()`
-2. Open a project in Neovim
-3. Run `:CodePreviewInstallClaudeCodeHooks` — writes hooks to `.claude/settings.local.json`
-4. Restart Claude Code CLI in the project directory
-5. Ask Claude to edit a file — a diff opens automatically in Neovim
-6. Accept/reject in the CLI; the diff closes automatically on accept
-7. If rejected, press `<leader>dq` to close the diff manually
+1. Open your project in Neovim.
+2. Install the agent's hooks (one command — pick your agent below) and **restart that agent's CLI**.
+3. Ask the agent to edit a file — a diff preview opens automatically in Neovim.
+4. Review it, then accept or reject in the agent. On accept, the preview closes automatically.
 
-### OpenCode
+Then run the one install command for your agent (and apply any agent-specific config):
 
-1. Install the plugin and call `setup()`
-2. Open a project in Neovim
-3. Run `:CodePreviewInstallOpenCodeHooks` — copies the plugin to `.opencode/plugins/`
-4. Ensure your OpenCode config (`~/.config/opencode/opencode.json`) has permission prompts enabled:
-   ```json
-   {
-     "permission": {
-       "edit": "ask",
-       "bash": "ask"
-     }
-   }
-   ```
-5. Start OpenCode in the project directory
-6. Ask OpenCode to edit a file — a diff opens automatically in Neovim
-7. Accept/reject in OpenCode; the diff closes automatically on accept
-8. If rejected, press `<leader>dq` to close the diff manually
+<details open>
+<summary><b>Claude Code</b></summary>
 
-### GitHub Copilot CLI
+`:CodePreviewInstallClaudeCodeHooks` — writes hooks to `.claude/settings.local.json`. No extra config needed.
 
-1. Install the plugin and call `setup()`
-2. Open a project in Neovim
-3. Run `:CodePreviewInstallCopilotCliHooks` — writes `.github/hooks/code-preview.json`
-4. Start Copilot CLI in the project directory
-5. Ask Copilot to edit a file — a diff opens automatically in Neovim
-6. Accept/reject in the CLI; the diff closes automatically on accept
-7. If rejected, press `<leader>dq` to close the diff manually
+</details>
 
-> **Note:** Copilot CLI does not fire post-tool hooks on rejection, so rejected diffs remain open until you dismiss them (same as Claude Code).
+<details>
+<summary><b>OpenCode</b></summary>
 
-### OpenAI Codex CLI
+`:CodePreviewInstallOpenCodeHooks` — copies the plugin to `.opencode/plugins/`.
 
-1. Install the plugin and call `setup()`
-2. Open a project in Neovim
-3. Run `:CodePreviewInstallCodexCliHooks` — writes `.codex/hooks.json`
-4. The diff-preview workflow only makes sense when Codex asks before applying edits. Create or edit `.codex/config.toml` (project-local) or `~/.codex/config.toml` (global) and add:
+Then enable permission prompts in `~/.config/opencode/opencode.json`:
 
-   ```toml
-   approval_policy = "on-request"
-   sandbox_mode    = "read-only"
-   ```
+```json
+{ "permission": { "edit": "ask", "bash": "ask" } }
+```
 
-   `approval_policy = "on-request"` and `sandbox_mode = "read-only"` ensure Codex prompts you before every edit, so the diff preview has time to open and you have time to review. Without them, Codex may apply changes without prompting and the preview window will never block on your decision.
+</details>
 
-   > **Note on the hooks feature flag:** Modern Codex enables hooks by default — no `[features]` entry is required. If you previously disabled them with `[features] hooks = false` (or the legacy `codex_hooks = false`), remove that line. `:CodePreviewStatus` and `:checkhealth code-preview` will warn if hooks are explicitly disabled.
-5. Start Codex CLI in the project directory
-6. Ask Codex to edit a file — a diff opens automatically in Neovim
-7. Accept/reject in the CLI; the diff closes automatically on accept
-8. If rejected, press `<leader>dq` to close the diff manually
+<details>
+<summary><b>GitHub Copilot CLI</b></summary>
 
-> **Note:** Today's Codex models route all file edits through the `apply_patch` tool. New file creation that Codex performs via shell redirection (e.g. `printf … > foo.txt`) is not previewed — only `apply_patch` and edits via the dedicated `Edit`/`Write` tools (when emitted) are.
+`:CodePreviewInstallCopilotCliHooks` — writes `.github/hooks/code-preview.json`. No extra config needed.
+
+</details>
+
+<details>
+<summary><b>OpenAI Codex CLI</b></summary>
+
+`:CodePreviewInstallCodexCliHooks` — writes `.codex/hooks.json`.
+
+Codex must ask before applying edits, so set this in `.codex/config.toml` (or `~/.codex/config.toml`):
+
+```toml
+approval_policy = "on-request"
+sandbox_mode    = "read-only"
+```
+
+Without it, Codex may apply changes without prompting and the preview never blocks on your decision. Hooks are enabled by default in modern Codex; if you previously set `[features] hooks = false` (or the legacy `codex_hooks = false`), remove it. Codex routes file edits through `apply_patch` — files created via shell redirection (`printf … > foo.txt`) aren't previewed.
+
+</details>
+
+> **Rejected a change?** The post-tool hook only fires on accept (and not at all on rejection for Claude Code & Copilot CLI), so press `<leader>dq` — or run `:CodePreviewCloseDiff` — to close the preview manually.
+
+---
+
+## Supported agents
+
+Every agent is first-class — same diff experience, same keymaps, same neo-tree indicators.
+
+| Agent | Install command | Mechanism |
+|-------|-----------------|-----------|
+| Claude Code | `:CodePreviewInstallClaudeCodeHooks` | shell hooks in `.claude/settings.local.json` |
+| OpenCode | `:CodePreviewInstallOpenCodeHooks` | TS plugin in `.opencode/plugins/` |
+| GitHub Copilot CLI | `:CodePreviewInstallCopilotCliHooks` | shell hooks in `.github/hooks/code-preview.json` |
+| OpenAI Codex CLI | `:CodePreviewInstallCodexCliHooks` | shell hooks in `.codex/hooks.json` |
+
+Each install command has a matching `:CodePreviewUninstall…` counterpart. More agents are planned.
+
+---
+
+## Configuration
+
+`setup()` works with zero config. The most common knob is the diff **layout**:
+
+```lua
+require("code-preview").setup({
+  diff = {
+    layout = "tab",  -- "tab" | "vsplit" | "inline"
+  },
+})
+```
+
+| Layout | Description |
+|--------|-------------|
+| `"tab"` (default) | Side-by-side diff in a new tab — CURRENT left, PROPOSED right |
+| `"vsplit"` | Side-by-side as a vertical split in the current tab |
+| `"inline"` | GitHub-style unified diff in one buffer, syntax highlighting preserved, `]c` / `[c` to navigate |
+
+You can also set the layout **per agent** — e.g. inline for Codex, a tab for everything else:
+
+```lua
+require("code-preview").setup({
+  diff = {
+    layout  = "tab",                 -- default for all agents
+    layouts = { codex = "inline" },  -- keys: claudecode | opencode | copilot | codex
+  },
+})
+```
+
+**Full option reference:** `:help code-preview-config` (or [`doc/code-preview.txt`](doc/code-preview.txt)) — every option, with the defaults kept in sync with the source.
+
+<details>
+<summary><b>Commands & keymaps</b></summary>
+
+| Command | Description |
+|---------|-------------|
+| `:CodePreviewInstall…Hooks` / `:CodePreviewUninstall…Hooks` | Install/remove hooks for an agent (`ClaudeCode`, `OpenCode`, `CopilotCli`, `CodexCli`) |
+| `:CodePreviewCloseDiff` | Manually close the diff (use after rejecting) |
+| `:CodePreviewStatus` | Show socket path, hook status, and dependency check |
+| `:CodePreviewToggleVisibleOnly` | Toggle `visible_only` — diffs only for open buffers |
+| `:checkhealth code-preview` | Full health check (all agents) |
+
+| Key | Scope | Description |
+|-----|-------|-------------|
+| `<leader>dq` | global | Close the diff (same as `:CodePreviewCloseDiff`) |
+| `]c` | inline diff buffer | Jump to next change |
+| `[c` | inline diff buffer | Jump to previous change |
+
+See `:help code-preview-commands` and `:help code-preview-keymaps` for details.
+
+</details>
+
+---
+
+## Neo-tree integration (optional)
+
+If you use [neo-tree.nvim](https://github.com/nvim-neo-tree/neo-tree.nvim), code-preview decorates your file tree with indicators whenever changes are pending — no extra config, it works out of the box. If neo-tree isn't installed, nothing changes.
+
+| Status | Icon | Color | Meaning |
+|--------|------|-------|---------|
+| Modified | 󰏫 | Orange | An existing file is being edited |
+| Created | 󰎔 | Cyan + italic | A new file is being created (virtual node) |
+| Deleted | 󰆴 | Red + strikethrough | A file is being deleted via `rm` |
+
+Plus: auto-reveal of the changed file, virtual nodes for not-yet-created files, a temporarily clean focus (git status/diagnostics hidden while a change is pending), and auto-cleanup on accept/reject/`<leader>dq`. Symbols, colors, position, and reveal behavior are all configurable under the `neo_tree` table — see `:help code-preview-config`.
 
 ---
 
@@ -171,249 +246,22 @@ AI Agent (terminal)                              Neovim
         |                                          |
    Hook/plugin fires ──→ compute diff ──→ RPC → show_diff()
         |                                          | (side-by-side or inline)
-   CLI: "Accept? (y/n)"                            |
-        |                                     User reviews diff
+   CLI: "Accept? (y/n)"                       User reviews diff
+        |                                          |
    User accepts/rejects                            |
         |                                          |
    Post hook fires ────→ cleanup ─────→ RPC → close_diff()
 ```
 
-**Claude Code** uses shell-based hooks (`PreToolUse`/`PostToolUse`) configured in `.claude/settings.local.json`.
+A hook fires before the edit is applied → Neovim shows the diff → a post-tool hook cleans up after you accept or reject. That's the whole loop, for every agent.
 
-**OpenCode** uses a TypeScript plugin (`tool.execute.before`/`tool.execute.after`) loaded from `.opencode/plugins/`.
-
-**GitHub Copilot CLI** uses shell-based hooks (`preToolUse`/`postToolUse`) configured in `.github/hooks/code-preview.json`. The adapter translates Copilot's tool vocabulary (`apply_patch`, `edit`, `create`, `bash`) into the same normalized format used by the other backends.
-
-**OpenAI Codex CLI** uses shell-based hooks (`PreToolUse`/`PostToolUse`) configured in `.codex/hooks.json`. Hooks are enabled by default in modern Codex; the only way to silence them is `[features] hooks = false` (or the legacy `codex_hooks = false`) in `.codex/config.toml`. The adapter passes `Bash` through and rewrites `apply_patch` (whose patch text lives in `tool_input.command`) into the canonical `ApplyPatch` shape with `tool_input.patch_text`.
-
-All backends communicate with Neovim via RPC (`nvim --server <socket> --remote-send`).
-
----
-
-## Configuration
-
-All options with defaults:
-
-```lua
-require("code-preview").setup({
-  debug = false,         -- enable debug logging to stdpath("log")/code-preview.log
-  diff = {
-    layout   = "tab",    -- "tab" (new tab) | "vsplit" (current tab) | "inline" (GitHub-style)
-    labels   = { current = "CURRENT", proposed = "PROPOSED" },
-    equalize   = true,   -- 50/50 split widths (tab/vsplit only)
-    full_file  = true,   -- show full file, not just diff hunks (tab/vsplit only)
-    visible_only = false, -- skip diffs for files not open in any Neovim buffer
-    defer_claude_permissions = false, -- for Claude Code: let its own settings decide, don't prompt
-  },
-  highlights = {
-    current = {          -- CURRENT (original) side — tab/vsplit layouts
-      DiffAdd    = { bg = "#4c2e2e" },
-      DiffDelete = { bg = "#4c2e2e" },
-      DiffChange = { bg = "#4c3a2e" },
-      DiffText   = { bg = "#5c3030" },
-    },
-    proposed = {         -- PROPOSED side — tab/vsplit layouts
-      DiffAdd    = { bg = "#2e4c2e" },
-      DiffDelete = { bg = "#4c2e2e" },
-      DiffChange = { bg = "#2e3c4c" },
-      DiffText   = { bg = "#3e5c3e" },
-    },
-    inline = {           -- inline layout
-      added        = { bg = "#2e4c2e" },          -- added line background
-      removed      = { bg = "#4c2e2e" },          -- removed line background
-      added_text   = { bg = "#3a6e3a" },          -- changed characters (added)
-      removed_text = { bg = "#6e3a3a" },          -- changed characters (removed)
-    },
-  },
-})
-```
-
----
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `:CodePreviewInstallClaudeCodeHooks` | Install Claude Code hooks to `.claude/settings.local.json` |
-| `:CodePreviewUninstallClaudeCodeHooks` | Remove Claude Code hooks (leaves other hooks intact) |
-| `:CodePreviewInstallOpenCodeHooks` | Install OpenCode plugin to `.opencode/plugins/` |
-| `:CodePreviewUninstallOpenCodeHooks` | Remove OpenCode plugin |
-| `:CodePreviewInstallCopilotCliHooks` | Install Copilot CLI hooks to `.github/hooks/code-preview.json` |
-| `:CodePreviewUninstallCopilotCliHooks` | Remove Copilot CLI hooks |
-| `:CodePreviewInstallCodexCliHooks` | Install Codex CLI hooks to `.codex/hooks.json` |
-| `:CodePreviewUninstallCodexCliHooks` | Remove Codex CLI hooks |
-| `:CodePreviewCloseDiff` | Manually close the diff (use after rejecting a change) |
-| `:CodePreviewStatus` | Show socket path, hook status, and dependency check |
-| `:CodePreviewToggleVisibleOnly` | Toggle visible_only — show diffs only for open buffers |
-| `:checkhealth code-preview` | Full health check (all backends) |
-
-## Keymaps
-
-| Key | Scope | Description |
-|-----|-------|-------------|
-| `<leader>dq` | global | Close the diff (same as `:CodePreviewCloseDiff`) |
-| `]c` | inline diff buffer | Jump to next change |
-| `[c` | inline diff buffer | Jump to previous change |
-
-All defaults are configurable via `setup()`:
-
-```lua
-require("code-preview").setup({
-  keys = {
-    next_change = "]c",          -- inline diff: next change
-    prev_change = "[c",          -- inline diff: previous change
-    close_all   = "<leader>dq",  -- close diff and clear indicators
-  },
-})
-```
-
-Set any entry to `false` to skip that binding, or `keys = false` to skip them all. A `<Plug>(CodePreviewCloseAll)` mapping is always defined, so you can bind it yourself even with `keys = false`:
-
-```lua
-vim.keymap.set("n", "<leader>x", "<Plug>(CodePreviewCloseAll)")
-```
-
----
-
-## Diff Layouts
-
-code-preview supports three diff layouts, configured via `diff.layout`:
-
-| Layout | Description |
-|--------|-------------|
-| `"tab"` (default) | Side-by-side diff in a new tab — CURRENT on the left, PROPOSED on the right |
-| `"vsplit"` | Side-by-side diff as a vertical split in the current tab |
-| `"inline"` | GitHub-style unified diff in a single buffer with syntax highlighting preserved |
-
-### Inline diff features
-
-- **Syntax highlighting** — the file's language highlighting is preserved
-- **Character-level diffs** — changed portions within a line are highlighted with a brighter background
-- **Sign column** — `+`/`-` signs indicate added/removed lines
-- **Navigation** — `]c` / `[c` to jump between changes
-
-To use inline diff:
-
-```lua
-require("code-preview").setup({
-  diff = { layout = "inline" },
-})
-```
-
----
-
-## Neo-tree Integration (Optional)
-
-If you use [neo-tree.nvim](https://github.com/nvim-neo-tree/neo-tree.nvim), code-preview will automatically decorate your file tree with visual indicators when changes are proposed. No extra configuration is required — it works out of the box.
-
-![neo-tree integration demo](docs/code-preview-neotree-integration.gif)
-
-### What you get
-
-| Status | Icon | Name Color | Description |
-|--------|------|------------|-------------|
-| Modified | 󰏫 | Orange | An existing file is being edited |
-| Created | 󰎔 | Cyan + italic | A new file is being created (shown as a virtual node) |
-| Deleted | 󰆴 | Red + strikethrough | A file is being deleted via `rm` |
-
-Additional behaviors:
-- **Auto-reveal** — the tree expands to highlight the changed file
-- **Virtual nodes** — new files/directories appear in the tree before they exist on disk
-- **Clean focus** — git status, diagnostics, and modified indicators are temporarily hidden while changes are pending
-- **Auto-cleanup** — all indicators clear when you accept, reject, or press `<leader>dq`
-
-### Neo-tree configuration options
-
-All neo-tree options with defaults:
-
-```lua
-require("code-preview").setup({
-  neo_tree = {
-    enabled = true,             -- set false to disable neo-tree integration
-    reveal = true,              -- auto-reveal changed files in the tree
-    reveal_root = "cwd",        -- "cwd" (current working dir) or "git" (git root)
-    position = "right",         -- neo-tree window position: "left", "right", "float"
-    symbols = {
-      modified = "󰏫",
-      created  = "󰎔",
-      deleted  = "󰆴",
-    },
-    highlights = {
-      modified = { fg = "#e8a838", bold = true },
-      created  = { fg = "#56c8d8", bold = true },
-      deleted  = { fg = "#e06c75", bold = true, strikethrough = true },
-    },
-  },
-})
-```
-
-> **Note:** Neo-tree is a soft dependency. If neo-tree is not installed, the plugin works exactly as before — only the diff preview.
-
----
-
-## Architecture
-
-```
-code-preview.nvim/
-├── lua/code-preview/
-│   ├── init.lua                     setup(), config, commands
-│   ├── diff.lua                     show_diff(), close_diff()
-│   ├── log.lua                      opt-in debug logging
-│   ├── changes.lua                  change status registry (modified/created/deleted)
-│   ├── neo_tree.lua                 neo-tree integration (icons, virtual nodes, reveal)
-│   ├── health.lua                   :checkhealth (all backends)
-│   └── backends/
-│       ├── claudecode.lua           Claude Code hook install/uninstall
-│       ├── opencode.lua             OpenCode plugin install/uninstall
-│       ├── copilot.lua              GitHub Copilot CLI hook install/uninstall
-│       └── codex.lua                OpenAI Codex CLI hook install/uninstall
-├── bin/                             Shared core scripts
-│   ├── core-pre-tool.sh             Unified PreToolUse logic
-│   ├── core-post-tool.sh            Unified PostToolUse logic
-│   ├── nvim-socket.sh               Neovim socket discovery
-│   ├── nvim-send.sh                 RPC send helper
-│   ├── apply-edit.lua               Single Edit transformer
-│   ├── apply-multi-edit.lua         MultiEdit transformer
-│   └── apply-patch.lua              ApplyPatch transformer (custom patch format)
-├── backends/
-│   ├── claudecode/                  Claude Code adapter
-│   │   ├── code-preview-diff.sh     PreToolUse hook entry point
-│   │   └── code-close-diff.sh       PostToolUse hook entry point
-│   ├── opencode/                    OpenCode adapter
-│   │   ├── index.ts                 tool.execute.before/after hooks
-│   │   ├── package.json
-│   │   └── tsconfig.json
-│   ├── copilot/                     GitHub Copilot CLI adapter
-│   │   ├── code-preview-diff.sh     preToolUse hook — translates Copilot JSON → core
-│   │   └── code-close-diff.sh       postToolUse hook — same for close
-│   └── codex/                       OpenAI Codex CLI adapter
-│       ├── code-preview-diff.sh     PreToolUse hook — translates Codex JSON → core
-│       └── code-close-diff.sh       PostToolUse hook — same for close
-```
-
----
-
-## Testing
-
-The test suite uses [plenary.nvim](https://github.com/nvim-lua/plenary.nvim) for core plugin tests and shell scripts for backend integration tests. CI runs on both Ubuntu and macOS.
-
-```bash
-./tests/run.sh                          # all tests (plugin + backends)
-./tests/run.sh plugin                   # core plugin tests only (plenary busted)
-./tests/run.sh backends                 # all backend integration tests
-./tests/run.sh backends/claudecode      # Claude Code backend only
-./tests/run.sh backends/opencode        # OpenCode backend only
-./tests/run.sh backends/copilot         # GitHub Copilot CLI backend only
-./tests/run.sh backends/codex           # OpenAI Codex CLI backend only
-```
-
-**Dependencies:** Neovim >= 0.10, jq, bun (for OpenCode tests). Plenary is auto-installed to `deps/` on first run.
+Curious about the internals — the per-OS hook entry, RPC transport, and per-agent adapters? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
 ## Recommended companion settings
 
-For buffers to auto-reload after a file is written, add this to your Neovim config:
+So buffers auto-reload after a file is written:
 
 ```lua
 vim.o.autoread = true
@@ -421,51 +269,53 @@ vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter", "CursorHold" }, {
   command = "checktime",
 })
 ```
+
 ---
 
-## Troubleshooting
+<details>
+<summary><b>Troubleshooting</b></summary>
 
 **Diff doesn't open**
-- Run `:CodePreviewStatus` — check that `Neovim socket` is found
-- Run `:checkhealth code-preview` — check for missing dependencies
-- Enable debug logging (`debug = true` in setup) and check `~/.local/state/nvim/code-preview.log`
+- `:CodePreviewStatus` — check that `Neovim socket` is found
+- `:checkhealth code-preview` — check for missing dependencies
+- Enable `debug = true` and check `~/.local/state/nvim/code-preview.log`
 - Restart the CLI agent after installing hooks (hooks are read at startup)
 
 **Claude Code hooks not firing**
-- Run `:CodePreviewInstallClaudeCodeHooks` in the project root
-- Verify `.claude/settings.local.json` contains the hook entries
-- Ensure `jq` is in PATH
-- Restart Claude Code CLI
+- Re-run `:CodePreviewInstallClaudeCodeHooks` in the project root
+- Verify `.claude/settings.local.json` contains the hook entries; ensure `jq` is in PATH; restart the CLI
 
 **OpenCode plugin not loading**
-- Run `:CodePreviewInstallOpenCodeHooks` in the project root
-- Verify `.opencode/plugins/index.ts` exists
-- Ensure `"permission": { "edit": "ask" }` is set in `~/.config/opencode/opencode.json`
-- Restart OpenCode
+- Re-run `:CodePreviewInstallOpenCodeHooks`; verify `.opencode/plugins/index.ts` exists
+- Ensure `"permission": { "edit": "ask" }` is set in `~/.config/opencode/opencode.json`; restart OpenCode
 
 **Codex CLI hooks not firing**
-- Run `:CodePreviewInstallCodexCliHooks` in the project root
-- Confirm `.codex/config.toml` does **not** contain `[features] hooks = false` (or the legacy `codex_hooks = false`) — hooks are enabled by default in modern Codex; an explicit `false` is the only way to silence them
-- Update Codex if needed — older versions required `codex_hooks = true` explicitly and only fired hooks for `Bash`, not `apply_patch`
-- Run `:CodePreviewStatus` and `:checkhealth code-preview` to verify install state and the feature flag
+- Re-run `:CodePreviewInstallCodexCliHooks`
+- Confirm `.codex/config.toml` does **not** contain `[features] hooks = false` (or the legacy `codex_hooks = false`)
+- Older Codex required `codex_hooks = true` and only fired hooks for `Bash`, not `apply_patch` — update if needed
+- `:CodePreviewStatus` / `:checkhealth code-preview` report install state and the feature flag
 
 **Copilot CLI hooks not firing**
-- Run `:CodePreviewInstallCopilotCliHooks` in the project root
-- Verify `.github/hooks/code-preview.json` exists
-- Ensure `jq` is in PATH (macOS/Linux only; the Windows hook uses PowerShell's native JSON parsing)
-- On Windows, Copilot runs the hook under **pwsh 7+** (its own requirement). If hooks silently don't fire, check your PowerShell execution policy with `Get-ExecutionPolicy` — pwsh's default `RemoteSigned` runs the local hook script, but `Restricted`/`AllSigned` blocks it (e.g. `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`)
-- Restart Copilot CLI (hooks are loaded at session start)
+- Re-run `:CodePreviewInstallCopilotCliHooks`; verify `.github/hooks/code-preview.json` exists
+- Ensure `jq` is in PATH (macOS/Linux). On Windows, Copilot runs the hook under pwsh 7+ — if it silently doesn't fire, check `Get-ExecutionPolicy` (`RemoteSigned` works; `Restricted`/`AllSigned` blocks it)
+- Restart Copilot CLI
 
 **Diff doesn't close after rejecting**
-- Press `<leader>dq` or run `:CodePreviewCloseDiff` — the post hook only fires on accept
+- Press `<leader>dq` or run `:CodePreviewCloseDiff` — the post hook only fires on accept (Claude Code & Copilot CLI)
 
 **Migrating from older versions**
-- Update `require("claude-preview")` to `require("code-preview")` in your Neovim config
+- Update `require("claude-preview")` → `require("code-preview")` in your config
 - Re-run `:CodePreviewInstallClaudeCodeHooks` to update hook paths
-- The old `:ClaudePreview*` commands have been removed — use the `:CodePreview*` equivalents
+- The old `:ClaudePreview*` commands were removed — use the `:CodePreview*` equivalents
+
+</details>
 
 ---
 
+## Contributing
+
+Architecture, internals, and how to run the tests live in [CONTRIBUTING.md](CONTRIBUTING.md). The project's vocabulary is defined in [CONTEXT.md](CONTEXT.md).
+
 ## License
 
-MIT — see [LICENSE](LICENSE)
+MIT — see [LICENSE](LICENSE).
