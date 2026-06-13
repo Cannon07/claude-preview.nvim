@@ -32,21 +32,21 @@ end
 -- (e.g. ApplyPatch passes "delete" for `*** Delete File:` directives). We
 -- only emit "deleted" when explicitly told — inferring it from an empty
 -- proposed file would misclassify legitimate truncations to zero bytes.
-local function mark_change_and_reveal(abs_file_path, action)
-  if not abs_file_path or abs_file_path == "" then
+local function mark_change_and_reveal(file_path, action)
+  if not file_path or file_path == "" then
     return
   end
 
   local status
   if action == "delete" then
     status = "deleted"
-  elseif vim.uv.fs_stat(abs_file_path) then
+  elseif vim.uv.fs_stat(file_path) then
     status = "modified"
   else
     status = "created"
   end
-  log.debug(log.fmt("mark_change_and_reveal: %s → %s", abs_file_path, status))
-  pcall(function() require("code-preview.changes").set(abs_file_path, status) end)
+  log.debug(log.fmt("mark_change_and_reveal: %s → %s", file_path, status))
+  pcall(function() require("code-preview.changes").set(file_path, status) end)
   pcall(function() require("code-preview.neo_tree").refresh() end)
 
   local cfg = require("code-preview").config
@@ -56,7 +56,7 @@ local function mark_change_and_reveal(abs_file_path, action)
 
   local reveal_dir = nil
   if cfg.neo_tree.reveal_root == "git" then
-    local parent = vim.fn.fnamemodify(abs_file_path, ":h")
+    local parent = vim.fn.fnamemodify(file_path, ":h")
     -- List-form (no shell): avoids the POSIX-only `2>/dev/null` redirect, which
     -- misbehaves under Windows cmd. `shell_error` still gates the result, so a
     -- non-repo parent (git's stderr + non-zero exit) simply leaves reveal_dir nil.
@@ -66,9 +66,9 @@ local function mark_change_and_reveal(abs_file_path, action)
     end
   end
 
-  local reveal_target = abs_file_path
+  local reveal_target = file_path
   if status == "created" then
-    local parent = vim.fn.fnamemodify(abs_file_path, ":h")
+    local parent = vim.fn.fnamemodify(file_path, ":h")
     while parent ~= "/" and vim.fn.isdirectory(parent) == 0 do
       parent = vim.fn.fnamemodify(parent, ":h")
     end
@@ -226,9 +226,9 @@ local function char_diff_ranges(old_line, new_line)
   return prefix, #old_line - suffix, #new_line - suffix
 end
 
-local function build_inline_diff(original_path, proposed_path)
-  local orig_lines = read_file_lines(original_path)
-  local prop_lines = read_file_lines(proposed_path)
+local function build_inline_diff(original_source_path, proposed_source_path)
+  local orig_lines = read_file_lines(original_source_path)
+  local prop_lines = read_file_lines(proposed_source_path)
   local orig_text = #orig_lines > 0 and (table.concat(orig_lines, "\n") .. "\n") or ""
   local prop_text = #prop_lines > 0 and (table.concat(prop_lines, "\n") .. "\n") or ""
 
@@ -340,13 +340,13 @@ local function build_inline_diff(original_path, proposed_path)
 end
 
 --- Create an inline diff tab and return {tab, bufs, inline_win}.
-local function show_inline_diff(original_path, proposed_path, real_file_path, cfg)
+local function show_inline_diff(original_source_path, proposed_source_path, display_path, cfg)
   apply_inline_highlights(cfg)
 
-  local display_name = real_file_path or "unknown"
-  local ft = vim.filetype.match({ filename = real_file_path }) or ""
+  local display_name = display_path or "unknown"
+  local ft = vim.filetype.match({ filename = display_path }) or ""
   local display_lines, line_highlights, char_highlights, line_numbers, line_types =
-    build_inline_diff(original_path, proposed_path)
+    build_inline_diff(original_source_path, proposed_source_path)
 
   vim.cmd("tabnew")
   local tab = vim.api.nvim_get_current_tabpage()
@@ -447,8 +447,8 @@ local function show_inline_diff(original_path, proposed_path, real_file_path, cf
   return { tab = tab, bufs = { buf }, inline_win = win }
 end
 
-function M.show_diff(original_path, proposed_path, real_file_path, abs_file_path, action, backend)
-  local file_key = abs_file_path or real_file_path
+function M.show_diff(original_source_path, proposed_source_path, display_path, file_path, action, backend)
+  local file_key = file_path or display_path
   local cfg = require("code-preview").config
   local layout = layout_for_backend(cfg, backend)
   log.info(log.fmt("show_diff: file=%s layout=%s backend=%s active=%d",
@@ -464,11 +464,11 @@ function M.show_diff(original_path, proposed_path, real_file_path, abs_file_path
   end
 
   -- Set the neo-tree indicator + reveal
-  mark_change_and_reveal(abs_file_path, action)
+  mark_change_and_reveal(file_path, action)
 
   -- Inline layout
   if layout == "inline" then
-    local result = show_inline_diff(original_path, proposed_path, real_file_path, cfg)
+    local result = show_inline_diff(original_source_path, proposed_source_path, display_path, cfg)
     active_diffs[file_key] = result
     -- Force terminal redraw so RPC-triggered tab creation is visible (see force_redraw).
     force_redraw()
@@ -478,9 +478,9 @@ function M.show_diff(original_path, proposed_path, real_file_path, abs_file_path
   -- Side-by-side / tab layout
   apply_highlights(cfg)
 
-  local display_name = real_file_path or "unknown"
+  local display_name = display_path or "unknown"
   local labels = cfg.diff.labels or { current = "CURRENT", proposed = "PROPOSED" }
-  local ft = vim.filetype.match({ filename = real_file_path }) or ""
+  local ft = vim.filetype.match({ filename = display_path }) or ""
 
   if layout == "vsplit" then
     vim.cmd("vsplit")
@@ -491,7 +491,7 @@ function M.show_diff(original_path, proposed_path, real_file_path, abs_file_path
 
   -- Left side: CURRENT
   local orig_buf = vim.api.nvim_get_current_buf()
-  vim.api.nvim_buf_set_lines(orig_buf, 0, -1, false, read_file_lines(original_path))
+  vim.api.nvim_buf_set_lines(orig_buf, 0, -1, false, read_file_lines(original_source_path))
   vim.bo[orig_buf].buftype    = "nofile"
   vim.bo[orig_buf].bufhidden  = "wipe"
   vim.bo[orig_buf].swapfile   = false
@@ -511,7 +511,7 @@ function M.show_diff(original_path, proposed_path, real_file_path, abs_file_path
   vim.cmd("rightbelow vsplit")
   local prop_buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_win_set_buf(0, prop_buf)
-  vim.api.nvim_buf_set_lines(prop_buf, 0, -1, false, read_file_lines(proposed_path))
+  vim.api.nvim_buf_set_lines(prop_buf, 0, -1, false, read_file_lines(proposed_source_path))
   vim.bo[prop_buf].buftype    = "nofile"
   vim.bo[prop_buf].bufhidden  = "wipe"
   vim.bo[prop_buf].swapfile   = false

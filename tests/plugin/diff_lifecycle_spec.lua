@@ -88,7 +88,7 @@ describe("diff lifecycle", function()
     local orig = tmp_file("tag_orig.txt", "aaa")
     local prop = tmp_file("tag_prop.txt", "bbb")
 
-    -- Pass abs_file_path as 4th arg to tag the diff
+    -- Pass file_path as 4th arg to tag the diff
     diff.show_diff(orig, prop, "tag.txt", "/abs/path/tag.txt")
 
     assert.is_true(diff.is_open())                    -- no arg: any diff is open
@@ -160,7 +160,7 @@ describe("diff lifecycle", function()
     local orig = tmp_file("del_orig.txt", "to be removed\n")
     local prop = tmp_file("del_prop.txt", "")
 
-    -- abs_file_path must point to a real on-disk file — `mark_change_and_reveal`
+    -- file_path must point to a real on-disk file — `mark_change_and_reveal`
     -- only honors the delete hint for files that currently exist.
     local abs = tmp_file("del_abs.txt", "to be removed\n")
 
