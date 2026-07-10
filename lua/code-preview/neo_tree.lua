@@ -2,6 +2,7 @@ local M = {}
 
 local changes = require("code-preview.changes")
 local log = require("code-preview.log")
+local resolve_hl = require("code-preview.hl").resolve
 
 -- Guard: all neo-tree interaction goes through pcall
 local has_neo_tree = false
@@ -16,10 +17,9 @@ local setup_done = false
 
 -- Define a highlight group from config (supports string link or table spec)
 local function define_hl(name, hl_config, opts)
-  if type(hl_config) == "string" then
-    vim.api.nvim_set_hl(0, name, vim.tbl_extend("force", { link = hl_config, default = true }, opts or {}))
-  elseif type(hl_config) == "table" then
-    vim.api.nvim_set_hl(0, name, vim.tbl_extend("force", hl_config, opts or {}))
+  local resolved = resolve_hl(hl_config, opts)
+  if resolved then
+    vim.api.nvim_set_hl(0, name, resolved)
   end
 end
 
