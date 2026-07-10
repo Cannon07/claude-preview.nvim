@@ -12,6 +12,80 @@ local function tmp_file(name, content)
   return path
 end
 
+-- This describe block must run before any other test in this file (or spec
+-- suite) calls show_diff — nvim_set_hl's `default = true` (the fix for
+-- string-configured highlights, see apply_highlights/apply_inline_highlights
+-- in diff.lua) only takes effect the *first* time a highlight group is
+-- defined in the process. Once another test defines ClaudeDiffInlineAdded /
+-- DiffAdd via a plain color table, a later default-linked definition is
+-- silently ignored, which is why these tests run first in file order.
+describe("diff highlights configured as strings", function()
+  -- Temporarily override highlights config for one test, restoring it afterwards.
+  local function with_highlights(highlights, fn)
+    local cfg = require("code-preview").config
+    local saved = vim.deepcopy(cfg.highlights)
+    cfg.highlights = vim.tbl_deep_extend("force", vim.deepcopy(saved), highlights)
+    local ok, err = pcall(fn)
+    cfg.highlights = saved
+    if not ok then error(err, 2) end
+  end
+
+  before_each(function()
+    changes.clear_all()
+    diff.close_diff()
+    vim.api.nvim_set_hl(0, "TestLinkTarget", { fg = "#ff00ff" })
+  end)
+
+  it("accepts a highlight-group-name string for highlights.inline.*", function()
+    local orig = tmp_file("hl_inline_orig.txt", "line one\nline two")
+    local prop = tmp_file("hl_inline_prop.txt", "line one\nline TWO")
+
+    local ok, err = pcall(function()
+      with_highlights({ inline = { added = "TestLinkTarget" } }, function()
+        local diff_cfg = require("code-preview").config.diff
+        local saved_layout = diff_cfg.layout
+        diff_cfg.layout = "inline"
+        diff.show_diff(orig, prop, "hl_inline.txt")
+        diff_cfg.layout = saved_layout
+      end)
+    end)
+    assert.is_true(ok, tostring(err))
+    assert.is_true(diff.is_open())
+
+    local hl = vim.api.nvim_get_hl(0, { name = "ClaudeDiffInlineAdded" })
+    assert.equals("TestLinkTarget", hl.link)
+
+    diff.close_diff()
+    os.remove(orig)
+    os.remove(prop)
+  end)
+
+  it("accepts a highlight-group-name string for highlights.current/proposed", function()
+    local orig = tmp_file("hl_tab_orig.txt", "line1\nline2")
+    local prop = tmp_file("hl_tab_prop.txt", "line1\nchanged")
+
+    local ok, err = pcall(function()
+      with_highlights({ current = { DiffAdd = "TestLinkTarget" } }, function()
+        local diff_cfg = require("code-preview").config.diff
+        local saved_layout = diff_cfg.layout
+        diff_cfg.layout = "tab"
+        diff.show_diff(orig, prop, "hl_tab.txt")
+        diff_cfg.layout = saved_layout
+      end)
+    end)
+    assert.is_true(ok, tostring(err))
+    assert.is_true(diff.is_open())
+
+    local current_ns = vim.api.nvim_get_namespaces()["claude_diff_current_hl"]
+    local hl = vim.api.nvim_get_hl(current_ns, { name = "DiffAdd" })
+    assert.equals("TestLinkTarget", hl.link)
+
+    diff.close_diff()
+    os.remove(orig)
+    os.remove(prop)
+  end)
+end)
+
 describe("diff lifecycle", function()
   before_each(function()
     changes.clear_all()

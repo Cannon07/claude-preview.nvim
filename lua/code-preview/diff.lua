@@ -16,14 +16,23 @@ local current_ns  = vim.api.nvim_create_namespace("claude_diff_current_hl")
 local proposed_ns = vim.api.nvim_create_namespace("claude_diff_proposed_hl")
 local inline_ns   = vim.api.nvim_create_namespace("claude_diff_inline_hl")
 
+-- Normalize a highlights config value: a bare highlight-group-name string
+-- links to that group; a table spec passes through unchanged.
+local function resolve_hl(hl)
+  if type(hl) == "string" then
+    return { link = hl, default = true }
+  end
+  return hl
+end
+
 local function apply_highlights(config)
   local cur = config.highlights.current
   local pro = config.highlights.proposed
   for name, hl in pairs(cur) do
-    vim.api.nvim_set_hl(current_ns, name, hl)
+    vim.api.nvim_set_hl(current_ns, name, resolve_hl(hl))
   end
   for name, hl in pairs(pro) do
-    vim.api.nvim_set_hl(proposed_ns, name, hl)
+    vim.api.nvim_set_hl(proposed_ns, name, resolve_hl(hl))
   end
 end
 
@@ -203,10 +212,10 @@ end
 
 local function apply_inline_highlights(config)
   local hl = config.highlights.inline or {}
-  vim.api.nvim_set_hl(0, "ClaudeDiffInlineAdded", hl.added or { bg = "#2e4c2e" })
-  vim.api.nvim_set_hl(0, "ClaudeDiffInlineRemoved", hl.removed or { bg = "#4c2e2e" })
-  vim.api.nvim_set_hl(0, "ClaudeDiffInlineAddedText", hl.added_text or { bg = "#3a6e3a" })
-  vim.api.nvim_set_hl(0, "ClaudeDiffInlineRemovedText", hl.removed_text or { bg = "#6e3a3a" })
+  vim.api.nvim_set_hl(0, "ClaudeDiffInlineAdded", resolve_hl(hl.added) or { bg = "#2e4c2e" })
+  vim.api.nvim_set_hl(0, "ClaudeDiffInlineRemoved", resolve_hl(hl.removed) or { bg = "#4c2e2e" })
+  vim.api.nvim_set_hl(0, "ClaudeDiffInlineAddedText", resolve_hl(hl.added_text) or { bg = "#3a6e3a" })
+  vim.api.nvim_set_hl(0, "ClaudeDiffInlineRemovedText", resolve_hl(hl.removed_text) or { bg = "#6e3a3a" })
   vim.api.nvim_set_hl(0, "ClaudeDiffInlineAddedSign", { fg = "#73e896", bold = true })
   vim.api.nvim_set_hl(0, "ClaudeDiffInlineRemovedSign", { fg = "#f47070", bold = true })
 end
