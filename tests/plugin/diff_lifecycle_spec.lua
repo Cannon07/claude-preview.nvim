@@ -12,13 +12,6 @@ local function tmp_file(name, content)
   return path
 end
 
--- This describe block must run before any other test in this file (or spec
--- suite) calls show_diff — nvim_set_hl's `default = true` (the fix for
--- string-configured highlights, see apply_highlights/apply_inline_highlights
--- in diff.lua) only takes effect the *first* time a highlight group is
--- defined in the process. Once another test defines ClaudeDiffInlineAdded /
--- DiffAdd via a plain color table, a later default-linked definition is
--- silently ignored, which is why these tests run first in file order.
 describe("diff highlights configured as strings", function()
   -- Temporarily override highlights config for one test, restoring it afterwards.
   local function with_highlights(highlights, fn)
@@ -34,6 +27,7 @@ describe("diff highlights configured as strings", function()
     changes.clear_all()
     diff.close_diff()
     vim.api.nvim_set_hl(0, "TestLinkTarget", { fg = "#ff00ff" })
+    vim.api.nvim_set_hl(0, "TestLinkTargetTwo", { fg = "#00ff00" })
   end)
 
   it("accepts a highlight-group-name string for highlights.inline.*", function()
@@ -79,6 +73,65 @@ describe("diff highlights configured as strings", function()
     local current_ns = vim.api.nvim_get_namespaces()["claude_diff_current_hl"]
     local hl = vim.api.nvim_get_hl(current_ns, { name = "DiffAdd" })
     assert.equals("TestLinkTarget", hl.link)
+
+    diff.close_diff()
+    os.remove(orig)
+    os.remove(prop)
+  end)
+
+  -- Regression test: a re-applied string-linked highlight must pick up a
+  -- changed target (e.g. after the user edits their config and re-sources
+  -- it). Previously nvim_set_hl's `default = true` made the first link
+  -- sticky for the rest of the process, so the second show_diff below would
+  -- have kept pointing at TestLinkTarget instead of TestLinkTargetTwo.
+  it("updates the link when a highlights.inline.* string value changes", function()
+    local orig = tmp_file("hl_inline_relink_orig.txt", "line one\nline two")
+    local prop = tmp_file("hl_inline_relink_prop.txt", "line one\nline TWO")
+
+    local function show_with(target)
+      with_highlights({ inline = { added = target } }, function()
+        local diff_cfg = require("code-preview").config.diff
+        local saved_layout = diff_cfg.layout
+        diff_cfg.layout = "inline"
+        diff.show_diff(orig, prop, "hl_inline_relink.txt")
+        diff_cfg.layout = saved_layout
+      end)
+    end
+
+    show_with("TestLinkTarget")
+    assert.equals("TestLinkTarget", vim.api.nvim_get_hl(0, { name = "ClaudeDiffInlineAdded" }).link)
+    diff.close_diff()
+
+    show_with("TestLinkTargetTwo")
+    assert.equals("TestLinkTargetTwo", vim.api.nvim_get_hl(0, { name = "ClaudeDiffInlineAdded" }).link)
+
+    diff.close_diff()
+    os.remove(orig)
+    os.remove(prop)
+  end)
+
+  it("updates the link when a highlights.current/proposed string value changes", function()
+    local orig = tmp_file("hl_tab_relink_orig.txt", "line1\nline2")
+    local prop = tmp_file("hl_tab_relink_prop.txt", "line1\nchanged")
+
+    local function show_with(target)
+      with_highlights({ current = { DiffAdd = target } }, function()
+        local diff_cfg = require("code-preview").config.diff
+        local saved_layout = diff_cfg.layout
+        diff_cfg.layout = "tab"
+        diff.show_diff(orig, prop, "hl_tab_relink.txt")
+        diff_cfg.layout = saved_layout
+      end)
+    end
+
+    local current_ns = vim.api.nvim_get_namespaces()["claude_diff_current_hl"]
+
+    show_with("TestLinkTarget")
+    assert.equals("TestLinkTarget", vim.api.nvim_get_hl(current_ns, { name = "DiffAdd" }).link)
+    diff.close_diff()
+
+    show_with("TestLinkTargetTwo")
+    assert.equals("TestLinkTargetTwo", vim.api.nvim_get_hl(current_ns, { name = "DiffAdd" }).link)
 
     diff.close_diff()
     os.remove(orig)

@@ -1,6 +1,7 @@
 local M = {}
 
 local log = require("code-preview.log")
+local resolve_hl = require("code-preview.hl").resolve
 
 -- Active diffs keyed by absolute file path.
 -- Each entry: { tab, bufs, augroup, inline_win }
@@ -15,15 +16,6 @@ local buf_inline_data = {}
 local current_ns  = vim.api.nvim_create_namespace("claude_diff_current_hl")
 local proposed_ns = vim.api.nvim_create_namespace("claude_diff_proposed_hl")
 local inline_ns   = vim.api.nvim_create_namespace("claude_diff_inline_hl")
-
--- Normalize a highlights config value: a bare highlight-group-name string
--- links to that group; a table spec passes through unchanged.
-local function resolve_hl(hl)
-  if type(hl) == "string" then
-    return { link = hl, default = true }
-  end
-  return hl
-end
 
 local function apply_highlights(config)
   local cur = config.highlights.current
